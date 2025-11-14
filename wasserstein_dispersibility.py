@@ -74,12 +74,12 @@ def find_inhaler_rodos_pairs(base_dir):
     Filenames must contain:
         - 'INHALER' or 'RODOS'
         - a run ID like 'Run4'
-        - a replicate like 'rep1' or 'Rep2'
+        - a replicate like 'rep1', 'Rep1', 'rep_1', etc.
 
     Returns a list of dicts with keys:
         - formulation_id
         - run_id
-        - replicate
+        - replicate   (canonical form: 'rep1', 'rep2', ...)
         - inhaler_path
         - rodos_path
     """
@@ -99,9 +99,15 @@ def find_inhaler_rodos_pairs(base_dir):
         run_match = re.search(r"Run\d+", name)
         run_id = run_match.group(0) if run_match else None
 
-        # Extract replicate, e.g. "rep1" or "Rep1"
-        rep_match = re.search(r"rep\d+", name, flags=re.IGNORECASE)
-        replicate = rep_match.group(0) if rep_match else None
+        # Extract replicate, e.g. "rep1", "Rep1", "rep_1"
+        rep_match = re.search(r"[Rr]ep[_-]?\d+", name)
+        if rep_match:
+            token = rep_match.group(0)          # e.g. "Rep3" or "rep_3"
+            num_match = re.search(r"\d+", token)
+            rep_num = num_match.group(0) if num_match else None
+            replicate = f"rep{rep_num}" if rep_num is not None else None
+        else:
+            replicate = None
 
         # Formulation folder: .../<formulation_id>/Rep_X/file.csv
         # parent = Rep_X, parent.parent = formulation_id
@@ -110,7 +116,7 @@ def find_inhaler_rodos_pairs(base_dir):
         entries.append({
             "formulation_id": formulation_id,
             "run_id": run_id,
-            "replicate": replicate,
+            "replicate": replicate,  # canonical
             "module": module,
             "path": csv_path,
         })
