@@ -2,6 +2,7 @@ from pathlib import Path
 import re
 import numpy as np
 import pandas as pd
+from collections import defaultdict
 
 def load_sympatec_cdf(csv_path):
     """
@@ -61,44 +62,77 @@ def wasserstein_1d_from_cdfs(df_inhaler, df_rodos):
     W1 = np.sum(diff_F * dx)
     return W1
 
+
 def find_inhaler_rodos_pairs(base_dir):
     """
-    Search recursively under base_dir for INHALER CSV files and, for each,
-    look for a corresponding RODOS CSV file with the same path and name
-    except 'INHALER' -> 'RODOS'.
+    Search recursively under base_dir for CSV files, identify INHALER and RODOS
+    measurements, and pair them by (formulation_id, run_id, replicate).
+
+    Assumes a folder layout like:
+        base_dir / <formulation_id> / Rep_X / <filename>.csv
+
+    Filenames must contain:
+        - 'INHALER' or 'RODOS'
+        - a run ID like 'Run4'
+        - a replicate like 'rep1' or 'Rep2'
 
     Returns a list of dicts with keys:
+        - formulation_id
         - run_id
         - replicate
         - inhaler_path
         - rodos_path
     """
     base_dir = Path(base_dir)
-    pairs = []
+    entries = []
 
-    for inhaler_path in base_dir.rglob("*INHALER*.csv"):
-        # Construct expected RODOS filename by simple string replacement
-        rodos_path = Path(str(inhaler_path).replace("INHALER", "RODOS"))
-        if not rodos_path.exists():
-            # No matching RODOS file found; skip
+    for csv_path in base_dir.rglob("*.csv"):
+        name = csv_path.name
+
+        # Identify module type (INHALER vs RODOS)
+        module_match = re.search(r"(INHALER|RODOS)", name)
+        if not module_match:
             continue
+        module = module_match.group(1)
 
-        name = inhaler_path.name
-
-        # Try to extract things like "Run4" from the filename
+        # Extract run ID, e.g. "Run4"
         run_match = re.search(r"Run\d+", name)
         run_id = run_match.group(0) if run_match else None
 
-        # Try to extract things like "rep1" (case-insensitive) from the filename
+        # Extract replicate, e.g. "rep1" or "Rep1"
         rep_match = re.search(r"rep\d+", name, flags=re.IGNORECASE)
         replicate = rep_match.group(0) if rep_match else None
 
-        pairs.append({
+        # Formulation folder: .../<formulation_id>/Rep_X/file.csv
+        # parent = Rep_X, parent.parent = formulation_id
+        formulation_id = csv_path.parents[1].name if len(csv_path.parents) >= 2 else None
+
+        entries.append({
+            "formulation_id": formulation_id,
             "run_id": run_id,
             "replicate": replicate,
-            "inhaler_path": inhaler_path,
-            "rodos_path": rodos_path,
+            "module": module,
+            "path": csv_path,
         })
+
+    # Group by (formulation_id, run_id, replicate) and pair INHALER/RODOS
+    grouped = defaultdict(dict)
+    for e in entries:
+        key = (e["formulation_id"], e["run_id"], e["replicate"])
+        grouped[key][e["module"]] = e["path"]
+
+    pairs = []
+    for (formulation_id, run_id, replicate), modules in grouped.items():
+        inh = modules.get("INHALER")
+        rod = modules.get("RODOS")
+        if inh and rod:
+            pairs.append({
+                "formulation_id": formulation_id,
+                "run_id": run_id,
+                "replicate": replicate,
+                "inhaler_path": inh,
+                "rodos_path": rod,
+            })
 
     return pairs
 
