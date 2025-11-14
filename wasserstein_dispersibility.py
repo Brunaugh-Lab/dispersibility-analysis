@@ -143,6 +143,7 @@ def compute_w1_table(base_dir):
     distance (in µm) and return a pandas DataFrame summarizing the results.
 
     Columns:
+        - formulation_id
         - run_id
         - replicate
         - inhaler_file
@@ -158,6 +159,7 @@ def compute_w1_table(base_dir):
         w1 = wasserstein_1d_from_cdfs(df_inh, df_rod)
 
         rows.append({
+            "formulation_id": pair["formulation_id"],
             "run_id": pair["run_id"],
             "replicate": pair["replicate"],
             "inhaler_file": str(pair["inhaler_path"]),
