@@ -174,3 +174,155 @@ def compute_w1_table(base_dir):
         })
 
     return pd.DataFrame(rows)
+
+def compute_d50_from_cdf(df):
+    """
+    Given a dataframe with columns 'size_um' and 'cdf' (0–1),
+    compute the volume-based D50 by linear interpolation.
+
+    Assumes 'cdf' is monotone increasing from 0 to ~1.
+    Returns D50 in µm.
+    """
+    x = df["size_um"].to_numpy()
+    F = df["cdf"].to_numpy()
+
+    # Find first index where CDF >= 0.5
+    idx = np.searchsorted(F, 0.5)
+
+    if idx == 0:
+        return x[0]
+    if idx >= len(x):
+        return x[-1]
+
+    x0, x1 = x[idx - 1], x[idx]
+    F0, F1 = F[idx - 1], F[idx]
+
+    # Linear interpolation between (x0, F0) and (x1, F1)
+    if F1 == F0:
+        return x0
+    frac = (0.5 - F0) / (F1 - F0)
+    return x0 + frac * (x1 - x0)
+
+
+def compute_rodos_d50_table(base_dir):
+    """
+    For all INHALER/RODOS CSV pairs under base_dir, compute the RODOS D50
+    (in µm) and return a pandas DataFrame summarizing the results.
+
+    One row per replicate-level condition:
+        - formulation_id
+        - run_id
+        - replicate
+        - rodos_d50_um
+    """
+    pairs = find_inhaler_rodos_pairs(base_dir)
+    rows = []
+
+    for pair in pairs:
+        df_rod = load_sympatec_cdf(pair["rodos_path"])
+        d50 = compute_d50_from_cdf(df_rod)
+
+        rows.append({
+            "formulation_id": pair["formulation_id"],
+            "run_id": pair["run_id"],
+            "replicate": pair["replicate"],
+            "rodos_d50_um": d50,
+        })
+
+    return pd.DataFrame(rows)
+
+
+def compute_condition_level_summary(base_dir):
+    """
+    Compute condition-level (formulation × run) means for W1 and D50,R.
+
+    Returns a DataFrame with columns:
+        - formulation_id
+        - run_id
+        - W1_mean_um
+        - W1_sd_um
+        - n_reps
+        - D50R_mean_um
+        - D50R_sd_um
+    """
+    df_w1 = compute_w1_table(base_dir)
+    df_d50 = compute_rodos_d50_table(base_dir)
+
+    # Merge replicate-level W1 and D50 tables
+    df = df_w1.merge(
+        df_d50,
+        on=["formulation_id", "run_id", "replicate"],
+        how="inner",
+    )
+
+    # Condition-level means
+    df_cond = (
+        df
+        .groupby(["formulation_id", "run_id"], as_index=False)
+        .agg(
+            W1_mean_um=("W1_um", "mean"),
+            W1_sd_um=("W1_um", "std"),
+            n_reps=("W1_um", "size"),
+            D50R_mean_um=("rodos_d50_um", "mean"),
+            D50R_sd_um=("rodos_d50_um", "std"),
+        )
+    )
+
+    return df_cond
+
+
+def normalization_diagnostics(df_cond, cv_threshold=0.15, corr_threshold=0.5):
+    """
+    Given a condition-level summary dataframe (from compute_condition_level_summary),
+    compute:
+        - CV_D50 across conditions
+        - Pearson correlation between W1_mean_um and D50R_mean_um
+
+    Returns a dict:
+        {
+            "CV_D50": float,
+            "corr_W1_D50": float,
+            "normalize": bool
+        }
+
+    Normalization is recommended if:
+        CV_D50 >= cv_threshold AND abs(corr_W1_D50) >= corr_threshold.
+    """
+    d50 = df_cond["D50R_mean_um"]
+    w1 = df_cond["W1_mean_um"]
+
+    cv_d50 = d50.std(ddof=1) / d50.mean()
+    corr = w1.corr(d50)
+
+    normalize = (cv_d50 >= cv_threshold) and (abs(corr) >= corr_threshold)
+
+    return {
+        "CV_D50": cv_d50,
+        "corr_W1_D50": corr,
+        "normalize": normalize,
+    }
+
+
+def run_normalization_analysis(base_dir, cv_threshold=0.15, corr_threshold=0.5):
+    """
+    High-level helper to:
+        1) Compute condition-level means for W1 and D50,R
+        2) Evaluate whether normalization is recommended
+        3) If recommended, add a 'W1_norm_by_D50R' column
+
+    Returns:
+        df_cond : DataFrame with condition-level summary
+                  (and W1_norm_by_D50R if normalization is recommended)
+        diagnostics : dict from normalization_diagnostics(...)
+    """
+    df_cond = compute_condition_level_summary(base_dir)
+    diagnostics = normalization_diagnostics(
+        df_cond,
+        cv_threshold=cv_threshold,
+        corr_threshold=corr_threshold,
+    )
+
+    if diagnostics["normalize"]:
+        df_cond["W1_norm_by_D50R"] = df_cond["W1_mean_um"] / df_cond["D50R_mean_um"]
+
+    return df_cond, diagnostics
