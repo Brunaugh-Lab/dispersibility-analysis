@@ -14,7 +14,10 @@ This toolkit calculates **dispersibility metrics** for dry powder inhalers by:
 **Pipeline workflow:**
 - Script 01: Reads raw data → Saves `data/tidy/standardized_data.csv`
 - Script 02: Reads tidy data → Saves `results/wasserstein_results.csv`
-- Script 03: Reads both → Generates `figures/*.png`
+- Script 03: Reads both → Generates PDFs + PNG in `figures/`
+  * One PDF per formulation (RODOS vs INHALER)
+  * One overlay PDF (all INHALER distributions)
+  * One PNG (W1 ranking bars)
 
 Each script is **standalone** and auto-creates needed folders/files.
 
@@ -52,10 +55,11 @@ Wasserstein_DPI/
 ├── results/                   # Auto-created by 02_wasserstein_core.R
 │   └── wasserstein_results.csv
 ├── figures/                   # Auto-created by 03_visualization.R
-│   ├── cdf_comparison.png
-│   ├── w1_ranking.png
-│   ├── d50_comparison.png
-│   └── dispersibility_panel.png
+│   ├── FormA_comparison.pdf   # Individual formulation PDFs (one per formulation)
+│   ├── FormB_comparison.pdf
+│   ├── ...
+│   ├── all_inhaler_overlay.pdf  # All INHALER distributions overlayed
+│   └── w1_ranking.png         # Dispersibility ranking bars
 └── scripts/
     ├── 01_data_import.R
     ├── 02_wasserstein_core.R
@@ -538,10 +542,10 @@ Once your data is successfully imported and W1 distances calculated:
 1. ✅ **Import data** (`01_data_import.R`) - Complete!
 2. ✅ **Calculate Wasserstein distances** (`02_wasserstein_core.R`) - Complete!
 3. ✅ **Generate visualizations** (`03_visualization.R`) - Complete!
-   - CDF comparison plots
-   - W1 bar charts
-   - d50 comparisons
-   - Publication-ready panels
+   - Individual PDFs per formulation (RODOS vs INHALER)
+   - Overlay PDF of all INHALER distributions
+   - W1 ranking bars (PNG)
+   - Additional plots available as functions (d50, panels, density)
 4. **Run statistical analysis** (script coming soon)
    - Mixture model fitting
    - Component effects
