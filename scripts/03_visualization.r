@@ -364,26 +364,28 @@ plot_w1_bars <- function(
     )
   }
 
-  # Save if requested (robust: device follows extension; dpi only for raster)
+  # Save if requested
   if (save_plot) {
-    if (!dir.exists(output_dir)) {
-      dir.create(output_dir, recursive = TRUE)
-    }
+    if (!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
 
     output_path <- file.path(output_dir, filename)
-    ext <- tolower(tools::file_ext(filename))
 
-    if (ext %in% c("png", "tif", "tiff", "jpg", "jpeg")) {
-      ggsave(output_path, p, width = width, height = height, dpi = dpi)
-    } else if (ext == "pdf") {
-      # cairo_pdf tends to render symbols (µ, subscripts) very cleanly
-      ggsave(output_path, p, width = width, height = height, device = cairo_pdf)
-    } else {
-      # Fallback: let ggsave infer device from extension
-      ggsave(output_path, p, width = width, height = height)
+    # Force base PDF device for reliability
+    ggsave(
+      filename = output_path,
+      plot = p,
+      width = width,
+      height = height,
+      units = "in",
+      device = "pdf"
+    )
+
+    # Assert it actually wrote
+    if (!file.exists(output_path)) {
+      stop("ggsave completed but file not found at: ", normalizePath(output_path, winslash = "/"))
     }
 
-    cat("✓ Saved:", output_path, "\n")
+    cat("✓ Saved:", normalizePath(output_path, winslash = "/"), "\n")
   }
 
   return(p)
