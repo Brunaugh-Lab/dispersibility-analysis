@@ -3,10 +3,25 @@
 # Visualization Functions for Dispersibility Analysis
 #
 # Purpose: Publication-ready plots for comparing particle size distributions
-#          and dispersibility metrics across formulations
+#          and dispersibility metrics across formulations. Automatically loads
+#          data and generates figures.
+#
+# Auto-execution: Script automatically runs when sourced
+#   - Reads data/tidy/standardized_data.csv (from script 01)
+#   - Reads results/wasserstein_results.csv (from script 02)
+#   - Generates plots and saves to figures/
+#
+# Input:
+#   - data/tidy/standardized_data.csv
+#   - results/wasserstein_results.csv
+# Output: figures/*.png
 #
 # Designed for: Single test condition vs reference (e.g., INHALER vs RODOS)
 #               Focus on formulation-level comparisons
+#
+# Usage:
+#   source("scripts/03_visualization.R")  # That's it!
+#
 # ==============================================================================
 
 library(tidyverse)
@@ -31,6 +46,12 @@ library(patchwork)  # For combining plots
 #'   Default: c("RODOS" = "#E31A1C", "INHALER" = "#1F78B4")
 #' @param facet_by Facet plots by formulation? (default: TRUE)
 #' @param ncol Number of columns for faceting (default: 3)
+#' @param save_plot Should plot be saved? (default: FALSE)
+#' @param output_dir Directory to save plot (default: "figures")
+#' @param filename Filename for saved plot (default: "cdf_comparison.png")
+#' @param width Plot width in inches (default: 12)
+#' @param height Plot height in inches (default: 8)
+#' @param dpi Plot resolution (default: 300)
 #'
 #' @return ggplot object
 #'
@@ -38,10 +59,9 @@ library(patchwork)  # For combining plots
 #' # Basic usage
 #' p <- plot_cdf_comparison(data)
 #' print(p)
-#' ggsave("cdf_comparison.png", p, width = 12, height = 8, dpi = 300)
 #'
-#' # Subset specific formulations
-#' p <- plot_cdf_comparison(data, formulations = c("FormA", "FormB", "FormC"))
+#' # Auto-save
+#' p <- plot_cdf_comparison(data, save_plot = TRUE)
 #'
 plot_cdf_comparison <- function(
     data,
@@ -50,7 +70,13 @@ plot_cdf_comparison <- function(
     formulations = NULL,
     color_palette = c("RODOS" = "#E31A1C", "INHALER" = "#1F78B4"),
     facet_by = TRUE,
-    ncol = 3
+    ncol = 3,
+    save_plot = FALSE,
+    output_dir = "figures",
+    filename = "cdf_comparison.png",
+    width = 12,
+    height = 8,
+    dpi = 300
 ) {
 
   # Subset formulations if specified
@@ -126,6 +152,16 @@ plot_cdf_comparison <- function(
   # Add faceting if requested
   if (facet_by) {
     p <- p + facet_wrap(~ formulation, ncol = ncol)
+  }
+
+  # Save if requested
+  if (save_plot) {
+    if (!dir.exists(output_dir)) {
+      dir.create(output_dir, recursive = TRUE)
+    }
+    output_path <- file.path(output_dir, filename)
+    ggsave(output_path, p, width = width, height = height, dpi = dpi)
+    cat("✓ Saved:", output_path, "\n")
   }
 
   return(p)
@@ -252,6 +288,12 @@ plot_psd_density <- function(
 #' @param sort_by Should bars be sorted by W1 value? (default: TRUE)
 #' @param bar_color Color for bars (default: "#1F78B4")
 #' @param show_values Show W1 values on bars? (default: TRUE)
+#' @param save_plot Should plot be saved? (default: FALSE)
+#' @param output_dir Directory to save plot (default: "figures")
+#' @param filename Filename for saved plot (default: "w1_ranking.png")
+#' @param width Plot width in inches (default: 10)
+#' @param height Plot height in inches (default: 6)
+#' @param dpi Plot resolution (default: 300)
 #'
 #' @return ggplot object
 #'
@@ -267,7 +309,13 @@ plot_w1_bars <- function(
     metric = "W1_micrometers",
     sort_by = TRUE,
     bar_color = "#1F78B4",
-    show_values = TRUE
+    show_values = TRUE,
+    save_plot = FALSE,
+    output_dir = "figures",
+    filename = "w1_ranking.png",
+    width = 10,
+    height = 6,
+    dpi = 300
 ) {
 
   # Validate metric
@@ -321,6 +369,16 @@ plot_w1_bars <- function(
     )
   }
 
+  # Save if requested
+  if (save_plot) {
+    if (!dir.exists(output_dir)) {
+      dir.create(output_dir, recursive = TRUE)
+    }
+    output_path <- file.path(output_dir, filename)
+    ggsave(output_path, p, width = width, height = height, dpi = dpi)
+    cat("✓ Saved:", output_path, "\n")
+  }
+
   return(p)
 }
 
@@ -338,6 +396,12 @@ plot_w1_bars <- function(
 #' @param sort_by Sort by d50_shift? (default: TRUE)
 #' @param reference_color Color for reference bars (default: "#E31A1C")
 #' @param test_color Color for test bars (default: "#1F78B4")
+#' @param save_plot Should plot be saved? (default: FALSE)
+#' @param output_dir Directory to save plot (default: "figures")
+#' @param filename Filename for saved plot (default: "d50_comparison.png")
+#' @param width Plot width in inches (default: 10)
+#' @param height Plot height in inches (default: 6)
+#' @param dpi Plot resolution (default: 300)
 #'
 #' @return ggplot object
 #'
@@ -345,7 +409,13 @@ plot_d50_comparison <- function(
     w1_results,
     sort_by = TRUE,
     reference_color = "#E31A1C",
-    test_color = "#1F78B4"
+    test_color = "#1F78B4",
+    save_plot = FALSE,
+    output_dir = "figures",
+    filename = "d50_comparison.png",
+    width = 10,
+    height = 6,
+    dpi = 300
 ) {
 
   # Reshape data for plotting
@@ -397,6 +467,16 @@ plot_d50_comparison <- function(
       plot.subtitle = element_text(size = 12)
     )
 
+  # Save if requested
+  if (save_plot) {
+    if (!dir.exists(output_dir)) {
+      dir.create(output_dir, recursive = TRUE)
+    }
+    output_path <- file.path(output_dir, filename)
+    ggsave(output_path, p, width = width, height = height, dpi = dpi)
+    cat("✓ Saved:", output_path, "\n")
+  }
+
   return(p)
 }
 
@@ -416,6 +496,12 @@ plot_d50_comparison <- function(
 #'   "horizontal" (default), "vertical", or "grid"
 #' @param reference_module Reference module name (default: "RODOS")
 #' @param test_module Test module name (default: "INHALER")
+#' @param save_plot Should plot be saved? (default: FALSE)
+#' @param output_dir Directory to save plot (default: "figures")
+#' @param filename Filename for saved plot (default: "dispersibility_panel.png")
+#' @param width Plot width in inches (default: 16)
+#' @param height Plot height in inches (default: 12)
+#' @param dpi Plot resolution (default: 300)
 #'
 #' @return patchwork object (combined ggplot)
 #'
@@ -429,7 +515,13 @@ create_publication_panel <- function(
     w1_results,
     layout = "horizontal",
     reference_module = "RODOS",
-    test_module = "INHALER"
+    test_module = "INHALER",
+    save_plot = FALSE,
+    output_dir = "figures",
+    filename = "dispersibility_panel.png",
+    width = 16,
+    height = 12,
+    dpi = 300
 ) {
 
   # Create individual plots
@@ -455,41 +547,195 @@ create_publication_panel <- function(
       theme = theme(plot.tag = element_text(face = "bold", size = 16))
     )
 
+  # Save if requested
+  if (save_plot) {
+    if (!dir.exists(output_dir)) {
+      dir.create(output_dir, recursive = TRUE)
+    }
+    output_path <- file.path(output_dir, filename)
+    ggsave(output_path, combined, width = width, height = height, dpi = dpi)
+    cat("✓ Saved:", output_path, "\n")
+  }
+
   return(combined)
 }
 
 
 # ==============================================================================
-# EXAMPLE USAGE
+# CONVENIENCE FUNCTION: Generate all standard plots
 # ==============================================================================
 
-# Uncomment to test with your data:
-#
-# # Load previous scripts
-# source("scripts/01_data_import.R")
-# source("scripts/02_wasserstein_core.R")
-#
-# # Import data and calculate W1
-# data <- read_ld_data_from_structure("data/") %>%
-#   mutate(replicate = tolower(replicate))
-#
-# w1_results <- calculate_pairwise_wasserstein(data)
-#
-# # Load visualization script
-# source("scripts/03_visualization.R")
-#
-# # Create individual plots
-# p_cdf <- plot_cdf_comparison(data)
-# p_w1 <- plot_w1_bars(w1_results)
-# p_d50 <- plot_d50_comparison(w1_results)
-# p_psd <- plot_psd_density(data)
-#
-# # Save plots
-# ggsave("CDF_comparison.png", p_cdf, width = 12, height = 8, dpi = 300)
-# ggsave("W1_ranking.png", p_w1, width = 10, height = 6, dpi = 300)
-# ggsave("d50_comparison.png", p_d50, width = 10, height = 6, dpi = 300)
-# ggsave("PSD_density.png", p_psd, width = 12, height = 8, dpi = 300)
-#
-# # Create combined publication figure
-# fig <- create_publication_panel(data, w1_results, layout = "horizontal")
-# ggsave("Figure_Dispersibility_Panel.png", fig, width = 16, height = 12, dpi = 300)
+#' Generate All Standard Dispersibility Plots
+#'
+#' Convenience wrapper that creates and saves all key visualizations:
+#' - CDF comparison
+#' - W1 ranking bars
+#' - d50 comparison
+#' - Combined panel figure
+#'
+#' @param data Standardized data from 01_data_import.R
+#' @param w1_results Wasserstein results from 02_wasserstein_core.R
+#' @param output_dir Directory to save plots (default: "figures")
+#' @param reference_module Reference module name (default: "RODOS")
+#' @param test_module Test module name (default: "INHALER")
+#' @param verbose Print progress? (default: TRUE)
+#'
+#' @return Named list of plot objects
+#'
+#' @examples
+#' # Generate all plots
+#' plots <- generate_all_plots(data, w1_results)
+#'
+generate_all_plots <- function(
+    data,
+    w1_results,
+    output_dir = "figures",
+    reference_module = "RODOS",
+    test_module = "INHALER",
+    verbose = TRUE
+) {
+
+  if (verbose) {
+    cat("\n========================================================================\n")
+    cat("GENERATING DISPERSIBILITY PLOTS\n")
+    cat("========================================================================\n")
+    cat("Output directory:", output_dir, "\n")
+    cat("------------------------------------------------------------------------\n")
+  }
+
+  # Create output directory if needed
+  if (!dir.exists(output_dir)) {
+    dir.create(output_dir, recursive = TRUE)
+    if (verbose) cat("Created output directory:", output_dir, "\n")
+  }
+
+  # Generate individual plots
+  if (verbose) cat("Creating CDF comparison plot...\n")
+  p_cdf <- plot_cdf_comparison(
+    data,
+    reference_module = reference_module,
+    test_module = test_module,
+    save_plot = TRUE,
+    output_dir = output_dir,
+    filename = "cdf_comparison.png",
+    width = 12,
+    height = 8
+  )
+
+  if (verbose) cat("Creating W1 ranking plot...\n")
+  p_w1 <- plot_w1_bars(
+    w1_results,
+    metric = "W1_micrometers",
+    save_plot = TRUE,
+    output_dir = output_dir,
+    filename = "w1_ranking.png",
+    width = 10,
+    height = 6
+  )
+
+  if (verbose) cat("Creating d50 comparison plot...\n")
+  p_d50 <- plot_d50_comparison(
+    w1_results,
+    save_plot = TRUE,
+    output_dir = output_dir,
+    filename = "d50_comparison.png",
+    width = 10,
+    height = 6
+  )
+
+  if (verbose) cat("Creating combined panel figure...\n")
+  p_panel <- create_publication_panel(
+    data,
+    w1_results,
+    layout = "horizontal",
+    reference_module = reference_module,
+    test_module = test_module,
+    save_plot = TRUE,
+    output_dir = output_dir,
+    filename = "dispersibility_panel.png",
+    width = 16,
+    height = 12
+  )
+
+  if (verbose) {
+    cat("------------------------------------------------------------------------\n")
+    cat("PLOTS COMPLETE - All figures saved to", output_dir, "\n")
+    cat("========================================================================\n\n")
+  }
+
+  # Return plots as named list (invisible so they don't print to console)
+  return(invisible(list(
+    cdf = p_cdf,
+    w1 = p_w1,
+    d50 = p_d50,
+    panel = p_panel
+  )))
+}
+
+
+# ==============================================================================
+# AUTO-EXECUTION: Generate plots when script is sourced
+# ==============================================================================
+
+# Check if required data files exist
+tidy_data_exists <- file.exists("data/tidy/standardized_data.csv")
+results_exist <- file.exists("results/wasserstein_results.csv")
+
+if (tidy_data_exists && results_exist) {
+
+  cat("\n========================================================================\n")
+  cat("AUTO-RUNNING VISUALIZATION\n")
+  cat("========================================================================\n")
+  cat("Reading: data/tidy/standardized_data.csv\n")
+  cat("Reading: results/wasserstein_results.csv\n")
+  cat("Saving to: figures/\n")
+  cat("------------------------------------------------------------------------\n")
+
+  # Load data
+  .viz_data <- read_csv("data/tidy/standardized_data.csv", show_col_types = FALSE)
+  .viz_results <- read_csv("results/wasserstein_results.csv", show_col_types = FALSE)
+
+  # Generate all plots
+  .viz_plots <- generate_all_plots(
+    data = .viz_data,
+    w1_results = .viz_results,
+    verbose = TRUE
+  )
+
+  cat("\n========================================================================\n")
+  cat("VISUALIZATION COMPLETE\n")
+  cat("========================================================================\n")
+  cat("Generated files:\n")
+  cat("  - figures/cdf_comparison.png\n")
+  cat("  - figures/w1_ranking.png\n")
+  cat("  - figures/d50_comparison.png\n")
+  cat("  - figures/dispersibility_panel.png\n")
+  cat("------------------------------------------------------------------------\n")
+  cat("All figures ready for publication!\n")
+  cat("========================================================================\n\n")
+
+  # Clean up auto-generated variables (optional)
+  # Uncomment if you don't want these in the environment
+  # rm(.viz_data, .viz_results, .viz_plots)
+
+} else {
+  cat("\n========================================================================\n")
+  cat("VISUALIZATION - WAITING FOR INPUT DATA\n")
+  cat("========================================================================\n")
+
+  if (!tidy_data_exists) {
+    cat("✗ Tidy data not found: data/tidy/standardized_data.csv\n")
+    cat("  Run: source('scripts/01_data_import.R')\n\n")
+  }
+
+  if (!results_exist) {
+    cat("✗ Results not found: results/wasserstein_results.csv\n")
+    cat("  Run: source('scripts/02_wasserstein_core.R')\n\n")
+  }
+
+  cat("Complete pipeline:\n")
+  cat("  source('scripts/01_data_import.R')\n")
+  cat("  source('scripts/02_wasserstein_core.R')\n")
+  cat("  source('scripts/03_visualization.R')\n")
+  cat("========================================================================\n\n")
+}

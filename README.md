@@ -14,9 +14,16 @@ This toolkit calculates **dispersibility metrics** for dry powder inhalers by:
 **Pipeline workflow:**
 - Script 01: Reads raw data → Saves `data/tidy/standardized_data.csv`
 - Script 02: Reads tidy data → Saves `results/wasserstein_results.csv`
-- Script 03: Reads both → Generates figures
+- Script 03: Reads both → Generates `figures/*.png`
 
 Each script is **standalone** and auto-creates needed folders/files.
+
+**Complete pipeline (3 lines):**
+```r
+source("scripts/01_data_import.R")       # Auto-imports → data/tidy/
+source("scripts/02_wasserstein_core.R")  # Auto-calculates → results/
+source("scripts/03_visualization.R")     # Auto-plots → figures/
+```
 
 ---
 
@@ -44,6 +51,11 @@ Wasserstein_DPI/
 │       └── standardized_data.csv  # Cleaned data for analysis
 ├── results/                   # Auto-created by 02_wasserstein_core.R
 │   └── wasserstein_results.csv
+├── figures/                   # Auto-created by 03_visualization.R
+│   ├── cdf_comparison.png
+│   ├── w1_ranking.png
+│   ├── d50_comparison.png
+│   └── dispersibility_panel.png
 └── scripts/
     ├── 01_data_import.R
     ├── 02_wasserstein_core.R
