@@ -3,7 +3,8 @@
 # Data Import and Standardization for Laser Diffraction Dispersibility Analysis
 #
 # Purpose: Flexible reading of Sympatec PAQXOS CSV exports with metadata
-#          extraction from directory structure
+#          extraction from directory structure. Automatically saves cleaned
+#          data for downstream analysis.
 #
 # Expected Directory Structure:
 #   data/
@@ -17,6 +18,10 @@
 #   │       └── ...
 #   └── FormulationB/
 #       └── ...
+#
+# Output Structure (auto-created):
+#   processed/
+#   └── standardized_data.csv
 #
 # ==============================================================================
 
@@ -44,6 +49,9 @@ library(janitor)
 #' @param module_folders Character vector of folder names that indicate dispersion
 #'   modules. Default: c("inhaler", "INHALER", "rodos", "RODOS")
 #'   Function will standardize these to uppercase for consistency.
+#' @param output_dir Directory to save processed data. Default: "processed/"
+#' @param save_output Should standardized data be saved to CSV? Default: TRUE
+#' @param output_filename Name of output file. Default: "standardized_data.csv"
 #' @param verbose Print progress messages? Default: TRUE
 #'
 #' @return Tibble with standardized columns:
@@ -55,21 +63,28 @@ library(janitor)
 #'   - replicate: Replicate identifier extracted from filename
 #'   - source_file: Full path to original CSV file for traceability
 #'
+#' @details
+#' This function automatically creates the output directory structure and saves
+#' the standardized data for use by downstream analysis scripts.
+#'
+#' Output file: processed/standardized_data.csv
+#'
+#' This cleaned dataset can be loaded by subsequent scripts:
+#'   - 02_wasserstein_core.R
+#'   - 03_visualization.R
+#'
 #' @examples
-#' # Basic usage with default patterns
+#' # Basic usage - saves to processed/standardized_data.csv
 #' data <- read_ld_data_from_structure("data/")
 #'
-#' # Custom formulation pattern (extract only numeric portion)
+#' # Custom formulation pattern
 #' data <- read_ld_data_from_structure(
 #'   "data/",
 #'   formulation_pattern = "\\d+_IMT"
 #' )
 #'
-#' # Custom replicate pattern for uppercase Rep_N format
-#' data <- read_ld_data_from_structure(
-#'   "data/",
-#'   replicate_pattern = "Rep_\\d+"
-#' )
+#' # Interactive use only (don't save)
+#' data <- read_ld_data_from_structure("data/", save_output = FALSE)
 #'
 read_ld_data_from_structure <- function(
     data_directory,
@@ -77,12 +92,23 @@ read_ld_data_from_structure <- function(
     replicate_pattern = "rep\\d+",
     skip_rows = 2,
     module_folders = c("inhaler", "INHALER", "rodos", "RODOS"),
+    output_dir = "processed",
+    save_output = TRUE,
+    output_filename = "standardized_data.csv",
     verbose = TRUE
 ) {
 
   # Validate inputs
   if (!dir.exists(data_directory)) {
     stop("Data directory does not exist: ", data_directory)
+  }
+
+  # Create output directory if it doesn't exist
+  if (save_output && !dir.exists(output_dir)) {
+    dir.create(output_dir, recursive = TRUE)
+    if (verbose) {
+      cat("Created output directory:", output_dir, "\n")
+    }
   }
 
   # Find all CSV files recursively
@@ -104,6 +130,10 @@ read_ld_data_from_structure <- function(
     cat("Data directory:", data_directory, "\n")
     cat("CSV files found:", length(file_paths), "\n")
     cat("Skip rows:", skip_rows, "\n")
+    if (save_output) {
+      cat("Output directory:", output_dir, "\n")
+      cat("Output file:", file.path(output_dir, output_filename), "\n")
+    }
     cat("------------------------------------------------------------------------\n\n")
   }
 
@@ -155,6 +185,10 @@ read_ld_data_from_structure <- function(
       source_file
     )
 
+  # Standardize replicate names to lowercase automatically
+  combined_data <- combined_data %>%
+    mutate(replicate = tolower(replicate))
+
   # Validate extraction
   if (any(is.na(combined_data$formulation))) {
     warning("Some files have NA formulation - check formulation_pattern")
@@ -193,6 +227,18 @@ read_ld_data_from_structure <- function(
     cat("Modules:", n_distinct(combined_data$module), "\n")
     cat("Files processed:", n_distinct(combined_data$source_file), "\n")
     cat("========================================================================\n\n")
+  }
+
+  # Save output if requested
+  if (save_output) {
+    output_path <- file.path(output_dir, output_filename)
+    write_csv(combined_data, output_path)
+
+    if (verbose) {
+      cat("✓ Standardized data saved to:", output_path, "\n")
+      cat("  File size:", format(object.size(combined_data), units = "MB"), "\n")
+      cat("  This file can be loaded by subsequent analysis scripts\n\n")
+    }
   }
 
   return(combined_data)
@@ -296,15 +342,68 @@ validate_ld_data <- function(data, check_replicates = TRUE, min_replicates = 3) 
 
 
 # ==============================================================================
+# CONVENIENCE FUNCTION: Load previously saved standardized data
+# ==============================================================================
+
+#' Load Standardized Data from Previous Run
+#'
+#' Quickly loads the standardized data saved by read_ld_data_from_structure()
+#' without re-reading all raw CSV files.
+#'
+#' @param processed_dir Directory containing processed data. Default: "processed/"
+#' @param filename Name of standardized data file. Default: "standardized_data.csv"
+#' @param verbose Print loading message? Default: TRUE
+#'
+#' @return Tibble with standardized data
+#'
+#' @examples
+#' # Load previously processed data (much faster than re-importing)
+#' data <- load_standardized_data()
+#'
+load_standardized_data <- function(
+    processed_dir = "processed",
+    filename = "standardized_data.csv",
+    verbose = TRUE
+) {
+
+  file_path <- file.path(processed_dir, filename)
+
+  if (!file.exists(file_path)) {
+    stop("Standardized data file not found: ", file_path,
+         "\nRun read_ld_data_from_structure() first to create this file.")
+  }
+
+  if (verbose) {
+    cat("Loading standardized data from:", file_path, "\n")
+  }
+
+  data <- read_csv(file_path, show_col_types = FALSE)
+
+  if (verbose) {
+    cat("✓ Loaded", nrow(data), "rows\n")
+    cat("  Formulations:", n_distinct(data$formulation), "\n")
+    cat("  Modules:", paste(unique(data$module), collapse = ", "), "\n\n")
+  }
+
+  return(data)
+}
+
+
+# ==============================================================================
 # EXAMPLE USAGE
 # ==============================================================================
 
-# Uncomment to test with your data structure:
+# Option 1: Full import from raw data (first time)
 # data <- read_ld_data_from_structure(
 #   data_directory = "data/",
-#   formulation_pattern = "\\d+_IMT",  # Extracts "132067_IMT", etc.
-#   replicate_pattern = "rep\\d+",      # Extracts "rep1", "rep2", etc.
+#   formulation_pattern = "\\d+_IMT",
+#   replicate_pattern = "[Rr]ep_?\\d+",
+#   save_output = TRUE,  # Saves to processed/standardized_data.csv
 #   verbose = TRUE
 # )
 #
-# validate_ld_data(data, check_replicates = TRUE, min_replicates = 3)
+# # Validate
+# validate_ld_data(data)
+
+# Option 2: Load previously processed data (subsequent runs - much faster!)
+# data <- load_standardized_data()
