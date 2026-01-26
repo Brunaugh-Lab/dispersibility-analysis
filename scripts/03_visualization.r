@@ -105,7 +105,7 @@ plot_individual_formulation_pdfs <- function(
       scale_fill_manual(values = color_palette, guide = "none") +
       labs(
         x = "Particle Size (µm)",
-        y = "Cumulative Distribution Q₃ (%)",
+        y = expression("Cumulative Distribution " * Q[3] * " (%)"),
         title = paste("Formulation:", form),
         subtitle = paste0(test_module, " vs ", reference_module, " Comparison")
       ) +
@@ -192,7 +192,7 @@ plot_all_inhaler_overlay <- function(
     scale_fill_viridis_d(guide = "none", option = "turbo") +
     labs(
       x = "Particle Size (µm)",
-      y = "Cumulative Distribution Q₃ (%)",
+      y = expression("Cumulative Distribution " * Q[3] * " (%)"),
       title = paste0("All ", test_module, " Distributions Overlay"),
       subtitle = paste("Comparing", n_formulations, "formulations")
     ) +
