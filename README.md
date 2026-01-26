@@ -170,9 +170,64 @@ data %>%
   print(n = Inf)
 ```
 
+### Step 7: Calculate Wasserstein Distances
+
+```r
+# Load the Wasserstein calculation functions
+source("scripts/02_wasserstein_core.R")
+
+# Calculate W1 distances (compares INHALER to RODOS for each formulation)
+w1_results <- calculate_pairwise_wasserstein(
+  data,
+  reference_module = "RODOS",
+  test_module = "INHALER",
+  verbose = TRUE
+)
+
+# Validate results (checks for errors and unreasonable values)
+validate_wasserstein_results(w1_results)
+
+# View results
+print(w1_results, n = Inf)
+
+# Save results to CSV
+write_csv(w1_results, "wasserstein_results.csv")
+```
+
+**Expected output:**
+```
+========================================================================
+CALCULATING WASSERSTEIN-1 DISTANCES
+========================================================================
+Reference condition: RODOS
+Test condition: INHALER
+Methodology: Pool replicates → Calculate W1
+------------------------------------------------------------------------
+
+Formulations to process: 7
+Processing: FormA ... W1 = 0.3245 µm, W1/d50 = 0.0891
+Processing: FormB ... W1 = 0.4123 µm, W1/d50 = 0.1156
+...
+
+========================================================================
+WASSERSTEIN CALCULATION COMPLETE
+========================================================================
+Successfully calculated W1 for 7 formulations
+...
+```
+
+**Results table columns:**
+- `W1_micrometers` - **Use this for DoE analysis** (absolute dispersibility)
+- `d50_reference_um` - Reference median diameter
+- `d50_test_um` - Test median diameter
+- `W1_normalized` - W1/d50 ratio (for cross-formulation comparison)
+- `d50_shift_um` - Difference in median diameters
+
 ---
 
 ## 📊 What You Get
+
+### After Data Import (Step 1-6)
 
 The imported `data` object is a tibble (data frame) with these columns:
 
@@ -185,6 +240,21 @@ The imported `data` object is a tibble (data frame) with these columns:
 | `module` | Dispersion module (standardized) | "INHALER", "RODOS" |
 | `replicate` | Replicate identifier | "rep1", "rep2", "rep3" |
 | `source_file` | Full path to original CSV | "data/FormA/inhaler/rep1.csv" |
+
+### After Wasserstein Calculation (Step 7)
+
+The `w1_results` object is a tibble with dispersibility metrics:
+
+| Column | Description | Use For |
+|--------|-------------|---------|
+| `formulation` | Formulation identifier | Grouping |
+| `W1_micrometers` | **Absolute W1 distance in µm** | **DoE analysis** |
+| `d50_reference_um` | Reference median diameter (µm) | Context |
+| `d50_test_um` | Test median diameter (µm) | Context |
+| `W1_normalized` | W1/d50 ratio (dimensionless) | Cross-study comparison |
+| `d50_shift_um` | Test d50 - Reference d50 (µm) | Understanding shift |
+
+**For Design of Experiments (DoE):** Use `W1_micrometers` as your response variable. Lower values indicate better dispersibility (less redistribution needed to match fully dispersed state).
 
 ---
 
@@ -273,14 +343,168 @@ Make sure you're in the repository root and CSV files are in `data/` subdirector
 
 ---
 
+## 🔧 Troubleshooting Wasserstein Calculations
+
+### Problem: "Negative W1 values detected"
+
+**Cause:** This is mathematically impossible and indicates a calculation error.
+
+**Solution:** Check your data:
+```r
+# Verify CDFs are properly formed (0 to 1, monotonic increasing)
+data %>%
+  group_by(source_file) %>%
+  summarise(
+    min_cdf = min(q3_cdf),
+    max_cdf = max(q3_cdf),
+    is_monotonic = all(diff(q3_cdf) >= 0)
+  ) %>%
+  filter(min_cdf < 0 | max_cdf > 1 | !is_monotonic)
+```
+
+### Problem: "W1/d50 values exceed 2.0"
+
+**Cause:** Very poor dispersibility or potential data quality issues.
+
+**Solution:** This is a warning, not necessarily an error. Large W1/d50 values can be legitimate for highly cohesive powders, but you should:
+1. Visually inspect the CDFs for the flagged formulation
+2. Verify the raw CSV files are correct
+3. Check if RODOS reference shows proper dispersion
+
+### Problem: "Some formulations show negative d50 shifts"
+
+**Cause:** Test condition (INHALER) produced finer aerosol than reference (RODOS).
+
+**Solution:** This is unusual but possible. It might indicate:
+- Inhaler is more efficient than expected (good!)
+- RODOS didn't fully disperse the powder (check pressure)
+- Data quality issue (verify raw files)
+
+### Problem: W1 calculation fails for specific formulation
+
+**Cause:** Usually missing data or file read errors.
+
+**Solution:**
+```r
+# Check which formulation failed
+formulations <- unique(data$formulation)
+
+# Verify data exists for that formulation
+data %>%
+  filter(formulation == "ProblemFormulation") %>%
+  count(module, replicate)
+
+# Check if pooling worked
+pool_replicate_cdfs(data, "ProblemFormulation", "RODOS")
+pool_replicate_cdfs(data, "ProblemFormulation", "INHALER")
+```
+
+---
+
+## 📋 Complete Workflow Example
+
+Here's the full pipeline from raw data to W1 results:
+
+```r
+# ============================================================================
+# COMPLETE DISPERSIBILITY ANALYSIS WORKFLOW
+# ============================================================================
+
+# Set working directory
+setwd("~/Documents/GitHub/Wasserstein_DPI")
+
+# Install packages (only needed once)
+# install.packages("tidyverse")
+# install.packages("janitor")
+
+library(tidyverse)
+
+# ----------------------------------------------------------------------------
+# STEP 1: IMPORT DATA
+# ----------------------------------------------------------------------------
+source("scripts/01_data_import.R")
+
+data <- read_ld_data_from_structure(
+  data_directory = "data/",
+  formulation_pattern = ".*",           # Use entire folder name
+  replicate_pattern = "[Rr]ep_?\\d+",   # Flexible replicate matching
+  verbose = TRUE
+)
+
+# Standardize replicate names
+data <- data %>%
+  mutate(replicate = tolower(replicate))
+
+# Validate data structure
+validate_ld_data(data, check_replicates = TRUE, min_replicates = 3)
+
+# Quick check
+data %>%
+  distinct(formulation, module, replicate) %>%
+  count(formulation, module) %>%
+  pivot_wider(names_from = module, values_from = n, values_fill = 0)
+
+# ----------------------------------------------------------------------------
+# STEP 2: CALCULATE WASSERSTEIN DISTANCES
+# ----------------------------------------------------------------------------
+source("scripts/02_wasserstein_core.R")
+
+w1_results <- calculate_pairwise_wasserstein(
+  data,
+  reference_module = "RODOS",
+  test_module = "INHALER",
+  verbose = TRUE
+)
+
+# Validate W1 results
+validate_wasserstein_results(w1_results)
+
+# View results
+print(w1_results, n = Inf)
+
+# ----------------------------------------------------------------------------
+# STEP 3: SAVE RESULTS
+# ----------------------------------------------------------------------------
+# Save W1 results for DoE analysis
+write_csv(w1_results, "wasserstein_results.csv")
+
+# Save a summary for quick reference
+w1_summary <- w1_results %>%
+  select(formulation, W1_micrometers, W1_normalized) %>%
+  arrange(W1_micrometers)  # Sort by dispersibility (best first)
+
+write_csv(w1_summary, "dispersibility_ranking.csv")
+
+cat("\n========================================================================\n")
+cat("ANALYSIS COMPLETE\n")
+cat("========================================================================\n")
+cat("Files saved:\n")
+cat("  - wasserstein_results.csv (full results)\n")
+cat("  - dispersibility_ranking.csv (summary)\n")
+cat("\nNext steps:\n")
+cat("  1. Use W1_micrometers for DoE modeling\n")
+cat("  2. Generate visualizations (scripts coming soon)\n")
+cat("  3. Run statistical analysis (scripts coming soon)\n")
+cat("========================================================================\n")
+```
+
+---
+
 ## 🎯 Next Steps
 
-Once your data is successfully imported and validated:
+Once your data is successfully imported and W1 distances calculated:
 
-1. **Calculate Wasserstein distances** (script coming soon: `02_wasserstein_core.R`)
-2. **Compute dispersibility metrics** (script coming soon: `03_dispersibility_metrics.R`)
-3. **Generate visualizations** (script coming soon: `04_visualization.R`)
-4. **Run statistical analysis** (script coming soon: `05_statistical_analysis.R`)
+1. ✅ **Import data** (`01_data_import.R`) - Complete!
+2. ✅ **Calculate Wasserstein distances** (`02_wasserstein_core.R`) - Complete!
+3. **Compute additional dispersibility metrics** (script coming soon: `03_dispersibility_metrics.R`)
+4. **Generate visualizations** (script coming soon: `04_visualization.R`)
+   - CDF comparison plots
+   - W1 bar charts
+   - Dispersibility trends
+5. **Run statistical analysis** (script coming soon: `05_statistical_analysis.R`)
+   - Factor effects (Device, Pressure, Formulation)
+   - Variance decomposition
+   - Limitation assessment
 
 ---
 
