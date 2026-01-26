@@ -6,9 +6,14 @@
 #          extraction from directory structure. Automatically saves cleaned
 #          data for downstream analysis.
 #
+# Auto-execution: Script automatically runs when sourced
+#   - Reads all CSV files from data/ directory
+#   - Saves to processed/standardized_data.csv
+#   - Folder name becomes formulation ID
+#
 # Expected Directory Structure:
 #   data/
-#   ├── FormulationA/
+#   ├── FormulationA/          ← Folder name = Formulation ID
 #   │   ├── inhaler/  (or INHALER)
 #   │   │   ├── rep1.csv
 #   │   │   ├── rep2.csv
@@ -23,6 +28,9 @@
 #   processed/
 #   └── standardized_data.csv
 #
+# Usage:
+#   source("scripts/01_data_import.R")  # That's it!
+#
 # ==============================================================================
 
 library(tidyverse)
@@ -34,16 +42,18 @@ library(janitor)
 
 #' Read Laser Diffraction CSV Files with Metadata from Directory Structure
 #'
+#' By default, the entire folder name becomes the formulation ID. This works for
+#' any naming scheme - simple ("FormA"), numbered ("Run2"), or complex ("231067_IMT").
+#'
 #' @param data_directory Path to directory containing subdirectories organized
 #'   by formulation and dispersion module (e.g., "data/", "./raw_data/")
 #' @param formulation_pattern Regex pattern to extract formulation ID from
-#'   folder name. Default extracts entire folder name. Examples:
-#'   - ".*" (default): Uses entire folder name as formulation ID
-#'   - "F\\d+" : Extracts F2, F3, F4, etc.
-#'   - "\\d+_IMT" : Extracts "132067_IMT", "231067_IMT", etc.
+#'   folder name. Default: ".*" (uses entire folder name - RECOMMENDED)
+#'   Only customize if you need to extract a portion:
+#'   - "\\d+_IMT" : Extracts "132067_IMT" from "132067_IMT_batch1"
+#'   - "Form[A-Z]" : Extracts "FormA" from "FormA_replicate_set"
 #' @param replicate_pattern Regex pattern to extract replicate ID from filename.
-#'   Default: "rep\\d+" extracts rep1, rep2, rep3, etc.
-#'   Alternative: "Rep_\\d+" for Rep_1, Rep_2, etc.
+#'   Default: "[Rr]ep_?\\d+" matches rep1, Rep1, rep_1, Rep_1
 #' @param skip_rows Number of header rows to skip in CSV files.
 #'   Default: 2 (standard for Sympatec PAQXOS exports)
 #' @param module_folders Character vector of folder names that indicate dispersion
@@ -58,38 +68,32 @@ library(janitor)
 #'   - particle_size_um: Particle diameter in micrometers (from xo column)
 #'   - q3_percent: Cumulative volume distribution, 0-100%
 #'   - q3_cdf: Cumulative distribution function, 0-1 (for Wasserstein calculation)
-#'   - formulation: Formulation identifier extracted from folder structure
+#'   - formulation: Formulation identifier (from folder name)
 #'   - module: Dispersion module (INHALER or RODOS, standardized to uppercase)
-#'   - replicate: Replicate identifier extracted from filename
+#'   - replicate: Replicate identifier (auto-standardized to lowercase)
 #'   - source_file: Full path to original CSV file for traceability
 #'
 #' @details
-#' This function automatically creates the output directory structure and saves
-#' the standardized data for use by downstream analysis scripts.
-#'
-#' Output file: processed/standardized_data.csv
-#'
-#' This cleaned dataset can be loaded by subsequent scripts:
-#'   - 02_wasserstein_core.R
-#'   - 03_visualization.R
+#' This function automatically:
+#' - Creates processed/ directory if needed
+#' - Saves standardized_data.csv for downstream scripts
+#' - Standardizes replicate names to lowercase
+#' - Extracts formulation ID from folder name (entire name by default)
 #'
 #' @examples
-#' # Basic usage - saves to processed/standardized_data.csv
+#' # Recommended - uses entire folder name as formulation ID
 #' data <- read_ld_data_from_structure("data/")
 #'
-#' # Custom formulation pattern
+#' # Only needed if extracting portion of folder name
 #' data <- read_ld_data_from_structure(
 #'   "data/",
 #'   formulation_pattern = "\\d+_IMT"
 #' )
 #'
-#' # Interactive use only (don't save)
-#' data <- read_ld_data_from_structure("data/", save_output = FALSE)
-#'
 read_ld_data_from_structure <- function(
     data_directory,
     formulation_pattern = ".*",  # Default: use entire folder name
-    replicate_pattern = "rep\\d+",
+    replicate_pattern = "[Rr]ep_?\\d+",  # Flexible: rep1, Rep1, rep_1, Rep_1
     skip_rows = 2,
     module_folders = c("inhaler", "INHALER", "rodos", "RODOS"),
     output_dir = "processed",
@@ -390,20 +394,104 @@ load_standardized_data <- function(
 
 
 # ==============================================================================
-# EXAMPLE USAGE
+# CONVENIENCE FUNCTION: Run import with project defaults
 # ==============================================================================
 
-# Option 1: Full import from raw data (first time)
-# data <- read_ld_data_from_structure(
-#   data_directory = "data/",
-#   formulation_pattern = "\\d+_IMT",
-#   replicate_pattern = "[Rr]ep_?\\d+",
-#   save_output = TRUE,  # Saves to processed/standardized_data.csv
-#   verbose = TRUE
-# )
-#
-# # Validate
-# validate_ld_data(data)
+#' Run Data Import with Sensible Defaults
+#'
+#' Convenience wrapper that uses standard settings:
+#' - Entire folder name becomes formulation ID
+#' - Flexible replicate matching (rep1, Rep1, rep_1, etc.)
+#' - Auto-saves to processed/standardized_data.csv
+#' - Auto-validates
+#'
+#' @param data_directory Path to data folder. Default: "data/"
+#' @param formulation_pattern Regex for formulation ID. Default: ".*" (entire folder name)
+#' @param replicate_pattern Regex for replicate ID. Default: "[Rr]ep_?\\d+"
+#' @param verbose Print progress? Default: TRUE
+#'
+#' @return Tibble with standardized data
+#'
+#' @examples
+#' # Simple usage with all defaults
+#' data <- run_data_import()
+#'
+#' # Custom data directory
+#' data <- run_data_import("raw_data/")
+#'
+run_data_import <- function(
+    data_directory = "data",
+    formulation_pattern = ".*",  # Use entire folder name
+    replicate_pattern = "[Rr]ep_?\\d+",  # Flexible replicate matching
+    verbose = TRUE
+) {
 
-# Option 2: Load previously processed data (subsequent runs - much faster!)
-# data <- load_standardized_data()
+  # Run the full import
+  data <- read_ld_data_from_structure(
+    data_directory = data_directory,
+    formulation_pattern = formulation_pattern,
+    replicate_pattern = replicate_pattern,
+    save_output = TRUE,
+    verbose = verbose
+  )
+
+  # Validate
+  validate_ld_data(data, check_replicates = TRUE, min_replicates = 3)
+
+  return(data)
+}
+
+
+# ==============================================================================
+# AUTO-EXECUTION: Run import when script is sourced
+# ==============================================================================
+
+# Check if data directory exists
+if (dir.exists("data")) {
+
+  cat("\n========================================================================\n")
+  cat("AUTO-RUNNING DATA IMPORT\n")
+  cat("========================================================================\n")
+  cat("Reading from: data/\n")
+  cat("Saving to: processed/standardized_data.csv\n")
+  cat("------------------------------------------------------------------------\n")
+
+  # Run the import with defaults
+  .standardized_data <- run_data_import(verbose = TRUE)
+
+  cat("\n========================================================================\n")
+  cat("IMPORT COMPLETE - Data saved to processed/standardized_data.csv\n")
+  cat("========================================================================\n")
+  cat("Next step: Run Wasserstein analysis\n")
+  cat("  source('scripts/02_wasserstein_core.R')\n")
+  cat("------------------------------------------------------------------------\n")
+  cat("To reload data later without re-importing:\n")
+  cat("  source('scripts/01_data_import.R')\n")
+  cat("  data <- load_standardized_data()\n")
+  cat("========================================================================\n\n")
+
+  # Clean up the auto-generated variable (optional)
+  # Uncomment if you don't want .standardized_data in the environment
+  # rm(.standardized_data)
+
+} else {
+  cat("\n========================================================================\n")
+  cat("DATA IMPORT - WAITING FOR DATA FOLDER\n")
+  cat("========================================================================\n")
+  cat("Data directory not found: data/\n")
+  cat("\nPlease create a data/ folder with your laser diffraction files:\n")
+  cat("  data/\n")
+  cat("  ├── FormulationA/\n")
+  cat("  │   ├── inhaler/\n")
+  cat("  │   │   ├── rep1.csv\n")
+  cat("  │   │   ├── rep2.csv\n")
+  cat("  │   │   └── rep3.csv\n")
+  cat("  │   └── rodos/\n")
+  cat("  │       └── ...\n")
+  cat("  └── FormulationB/\n")
+  cat("      └── ...\n")
+  cat("\nFolder names will become formulation IDs.\n")
+  cat("Then run this script again:\n")
+  cat("  source('scripts/01_data_import.R')\n")
+  cat("========================================================================\n\n")
+}
