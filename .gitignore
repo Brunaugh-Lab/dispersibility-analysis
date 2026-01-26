@@ -1,0 +1,180 @@
+# ==============================================================================
+# .gitignore for Dispersibility Analysis Repository
+# Purpose: Track code only, ignore data files and generated outputs
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# DATA FILES - Never commit raw or processed data
+# ------------------------------------------------------------------------------
+# Ignore all CSV files (laser diffraction data)
+*.csv
+
+# Ignore all data directories and their contents
+data/
+raw_data/
+processed_data/
+
+# Exception: Keep directory structure with .gitkeep files
+!**/.gitkeep
+
+# Ignore Excel files (if any)
+*.xlsx
+*.xls
+
+# ------------------------------------------------------------------------------
+# R-SPECIFIC FILES
+# ------------------------------------------------------------------------------
+# R history and workspace
+.Rhistory
+.RData
+.Rapp.history
+
+# RStudio project files
+.Rproj.user/
+*.Rproj
+
+# R environment variables
+.Renviron
+.Rprofile
+
+# renv package management (optional - uncomment if using renv)
+# renv/
+# renv.lock
+
+# R temporary files
+*-Ex.R
+*.Rcheck/
+*.o
+*.so
+*.dll
+
+# pkgdown site
+docs/
+
+# ------------------------------------------------------------------------------
+# PYTHON-SPECIFIC FILES (for legacy scripts)
+# ------------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+.Python
+.ipynb_checkpoints/
+*.egg-info/
+.venv/
+venv/
+ENV/
+
+# ------------------------------------------------------------------------------
+# OUTPUT FILES - Plots, results, reports
+# ------------------------------------------------------------------------------
+# Generated plots and figures
+*.png
+*.jpg
+*.jpeg
+*.pdf
+*.tiff
+*.tif
+*.svg
+*.eps
+
+# Exception: Keep example figures in documentation
+!examples/*.png
+!examples/*.pdf
+!README_figures/*.png
+
+# Generated results and reports
+results/
+outputs/
+figures/
+plots/
+
+# HTML/Markdown reports
+*.html
+*.htm
+!README.html  # Keep if you have one
+
+# ------------------------------------------------------------------------------
+# SYSTEM FILES
+# ------------------------------------------------------------------------------
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+.directory
+.Trash-*
+
+# ------------------------------------------------------------------------------
+# IDE AND EDITOR FILES
+# ------------------------------------------------------------------------------
+# VS Code
+.vscode/
+
+# Sublime Text
+*.sublime-workspace
+*.sublime-project
+
+# Emacs
+*~
+\#*\#
+.\#*
+
+# Vim
+*.swp
+*.swo
+*.swn
+
+# ------------------------------------------------------------------------------
+# TEMPORARY FILES
+# ------------------------------------------------------------------------------
+# General temporary files
+*.tmp
+*.temp
+*.log
+*.bak
+*.cache
+
+# Compiled LaTeX (if writing papers)
+*.aux
+*.out
+*.toc
+*.fdb_latexmk
+*.fls
+*.synctex.gz
+
+# ------------------------------------------------------------------------------
+# PROJECT-SPECIFIC
+# ------------------------------------------------------------------------------
+# Legacy Python script (optional - uncomment if you want to ignore)
+# wasserstein_dispersibility.py
+
+# Test files and scratch work
+test/
+scratch/
+sandbox/
+temp/
+
+# Large reference files
+*.zip
+*.tar.gz
+*.rar
+
+# ==============================================================================
+# WHAT TO KEEP (These are NOT ignored)
+# ==============================================================================
+# ✓ R scripts in scripts/
+# ✓ README.md and other documentation
+# ✓ .gitignore itself
+# ✓ Example usage files
+# ✓ .gitkeep files in empty directories
+# ==============================================================================
