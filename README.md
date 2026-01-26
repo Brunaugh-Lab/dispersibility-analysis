@@ -20,7 +20,7 @@ Organize your laser diffraction data like this:
 ```
 Wasserstein_DPI/
 ├── data/
-│   ├── FormulationA/          # Each formulation gets its own folder
+│   ├── FormulationA/          # Any formulation naming scheme works!
 │   │   ├── inhaler/            # Inhaler dispersion data (lowercase or UPPERCASE)
 │   │   │   ├── rep1.csv
 │   │   │   ├── rep2.csv
@@ -39,11 +39,21 @@ Wasserstein_DPI/
     └── ...
 ```
 
+**Formulation naming is flexible!** Examples of valid folder names:
+- Simple: `FormA`, `FormB`, `FormC`
+- Numbered: `Run2`, `Run3`, `Run4`
+- Descriptive: `Trehalose_High`, `Mannitol_Low`
+- Coded: `132067_IMT`, `231067_IMT` (current project example)
+- Complex: `F2_40-20-40_IMT`, `F3_33-00-67_IMT`
+
+By default, the entire folder name becomes the formulation ID.
+
 **Important notes:**
-- Formulation folder names will be used as formulation IDs
-- Subfolder names must contain "inhaler" or "rodos" (case-insensitive)
-- Replicate filenames must contain "rep1", "rep2", "rep3" (or "Rep1", "Rep_1", etc.)
-- CSV files must be Sympatec PAQXOS exports (standard format with 2 header rows)
+- **Formulation folder names** = your formulation IDs (by default, entire name is used)
+- **Subfolder names** must contain "inhaler" or "rodos" (case-insensitive)
+- **Replicate filenames** must contain "rep1", "rep2", "rep3" (or "Rep1", "Rep_1", etc.)
+- **CSV files** must be Sympatec PAQXOS exports (standard format with 2 header rows)
+- **Flexibility:** You can extract only part of folder names using custom patterns (see Step 4)
 
 ---
 
@@ -76,21 +86,12 @@ source("scripts/01_data_import.R")
 
 ### Step 4: Import Your Data
 
-**Basic usage** (if your formulation folders are simple names):
+**RECOMMENDED - Basic usage (uses entire folder name as formulation ID):**
 
 ```r
 data <- read_ld_data_from_structure(
   data_directory = "data/",
-  verbose = TRUE
-)
-```
-
-**For formulations named like "132067_IMT", "231067_IMT", etc:**
-
-```r
-data <- read_ld_data_from_structure(
-  data_directory = "data/",
-  formulation_pattern = "\\d+_IMT",      # Extracts the numeric_IMT part
+  formulation_pattern = ".*",            # Uses entire folder name (default)
   replicate_pattern = "[Rr]ep_?\\d+",    # Matches rep1, Rep1, rep_1, Rep_1
   verbose = TRUE
 )
@@ -99,6 +100,36 @@ data <- read_ld_data_from_structure(
 data <- data %>%
   mutate(replicate = tolower(replicate))
 ```
+
+This works for ANY folder naming scheme - the folder names become your formulation IDs.
+
+**Example project-specific patterns:**
+
+If you need to extract only PART of the folder name, customize `formulation_pattern`:
+
+```r
+# Example 1: Folders named "132067_IMT", "231067_IMT" → Extract "132067_IMT"
+formulation_pattern = "\\d+_IMT"
+
+# Example 2: Folders named "FormA_batch1_data" → Extract "FormA"
+formulation_pattern = "Form[A-Z]"
+
+# Example 3: Folders named "Run2", "Run3", "Run4" → Extract "Run2", "Run3", "Run4"
+formulation_pattern = "Run\\d+"
+
+# Example 4: Folders named "F2_40-20-40_IMT" → Extract entire name
+formulation_pattern = ".*"  # (default - use this!)
+```
+
+**When to customize patterns:**
+- Your folder names have extra text you don't want in formulation IDs
+- You want to extract specific portions (like numeric codes)
+- You need to match a specific naming convention from another lab
+
+**When to use default (`".*"`):**
+- Your folder names ARE your formulation IDs (most common!)
+- You want to keep the entire folder name
+- You're not sure - start with this!
 
 ### Step 5: Validate Your Data
 
@@ -115,12 +146,14 @@ data %>%
 
 **Expected output:**
 ```
-  formulation INHALER RODOS
-1 132067_IMT        3     3
-2 231067_IMT        3     3
-3 262054_IMT        3     3
+  formulation  INHALER RODOS
+1 FormA              3     3
+2 FormB              3     3
+3 FormC              3     3
 ...
 ```
+
+(Formulation names will match your folder names)
 
 ### Step 6: Inspect Your Data
 
@@ -148,10 +181,10 @@ The imported `data` object is a tibble (data frame) with these columns:
 | `particle_size_um` | Particle diameter in micrometers | 0.5, 1.0, 2.0, ... 100 |
 | `q3_percent` | Cumulative volume distribution (0-100%) | 0, 10.5, 45.2, ... 100 |
 | `q3_cdf` | Cumulative distribution function (0-1) | 0, 0.105, 0.452, ... 1.0 |
-| `formulation` | Formulation identifier | "132067_IMT", "231067_IMT" |
+| `formulation` | Formulation identifier (from folder name) | "FormA", "Run2", "132067_IMT" |
 | `module` | Dispersion module (standardized) | "INHALER", "RODOS" |
 | `replicate` | Replicate identifier | "rep1", "rep2", "rep3" |
-| `source_file` | Full path to original CSV | "data/132067_IMT/inhaler/rep1.csv" |
+| `source_file` | Full path to original CSV | "data/FormA/inhaler/rep1.csv" |
 
 ---
 
