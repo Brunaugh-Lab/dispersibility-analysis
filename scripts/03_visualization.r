@@ -12,7 +12,7 @@
 #   - Generates figures and saves to figures/
 #     * One PDF per formulation (RODOS vs INHALER comparison)
 #     * One overlay PDF (all INHALER distributions)
-#     * One PNG (W1 ranking bars)
+#     * One PDF (W1 ranking bars)
 #
 # Additional plots available as functions (call manually if needed):
 #   - plot_d50_comparison() - Median particle size comparison
@@ -40,29 +40,6 @@ library(patchwork)  # For combining plots
 # FUNCTION 1: Plot Individual Formulation Comparison (PDF per formulation)
 # ==============================================================================
 
-#' Plot Individual Formulation Comparison (RODOS vs INHALER)
-#'
-#' Creates separate PDF files for each formulation showing reference vs test
-#' distributions. One file per formulation.
-#'
-#' @param data Standardized data from read_ld_data_from_structure()
-#' @param reference_module Character string for reference (default: "RODOS")
-#' @param test_module Character string for test (default: "INHALER")
-#' @param formulations Optional character vector to subset formulations
-#'   If NULL (default), plots all formulations
-#' @param color_palette Named vector of colors for modules
-#'   Default: c("RODOS" = "#E31A1C", "INHALER" = "#1F78B4")
-#' @param output_dir Directory to save plots (default: "figures")
-#' @param width Plot width in inches (default: 8)
-#' @param height Plot height in inches (default: 6)
-#' @param verbose Print progress? (default: TRUE)
-#'
-#' @return Invisibly returns list of plot objects
-#'
-#' @examples
-#' # Generate PDFs for all formulations
-#' plot_individual_formulation_pdfs(data)
-#'
 plot_individual_formulation_pdfs <- function(
     data,
     reference_module = "RODOS",
@@ -75,33 +52,26 @@ plot_individual_formulation_pdfs <- function(
     verbose = TRUE
 ) {
 
-  # Create output directory if needed
   if (!dir.exists(output_dir)) {
     dir.create(output_dir, recursive = TRUE)
   }
 
-  # Subset formulations if specified
   if (!is.null(formulations)) {
     data <- data %>% filter(formulation %in% formulations)
   }
 
-  # Filter to relevant modules
   plot_data <- data %>%
     filter(module %in% c(reference_module, test_module))
 
-  # Get unique formulations
   formulation_list <- unique(plot_data$formulation)
 
-  # Create a plot for each formulation
   plots <- list()
 
   for (form in formulation_list) {
 
-    # Filter to this formulation
     form_data <- plot_data %>%
       filter(formulation == form)
 
-    # Calculate summary statistics
     summary_data <- form_data %>%
       group_by(module, particle_size_um) %>%
       summarise(
@@ -114,7 +84,6 @@ plot_individual_formulation_pdfs <- function(
         module = factor(module, levels = c(reference_module, test_module))
       )
 
-    # Create plot
     p <- ggplot(summary_data, aes(x = particle_size_um, y = q3_percent_mean,
                                    color = module, fill = module)) +
       geom_ribbon(
@@ -151,7 +120,6 @@ plot_individual_formulation_pdfs <- function(
         plot.subtitle = element_text(size = 12)
       )
 
-    # Save as PDF
     filename <- paste0(form, "_comparison.pdf")
     output_path <- file.path(output_dir, filename)
     ggsave(output_path, p, width = width, height = height, device = "pdf")
@@ -166,31 +134,10 @@ plot_individual_formulation_pdfs <- function(
   return(invisible(plots))
 }
 
-
 # ==============================================================================
 # FUNCTION 2: Plot All INHALER Distributions Overlay
 # ==============================================================================
 
-#' Plot All INHALER Distributions Overlayed
-#'
-#' Creates a single plot showing all INHALER distributions overlayed,
-#' with different colors for each formulation.
-#'
-#' @param data Standardized data from read_ld_data_from_structure()
-#' @param test_module Character string for test (default: "INHALER")
-#' @param formulations Optional character vector to subset formulations
-#' @param output_dir Directory to save plot (default: "figures")
-#' @param filename Filename for saved plot (default: "all_inhaler_overlay.pdf")
-#' @param width Plot width in inches (default: 10)
-#' @param height Plot height in inches (default: 6)
-#' @param verbose Print progress? (default: TRUE)
-#'
-#' @return ggplot object
-#'
-#' @examples
-#' # Create overlay of all INHALER distributions
-#' p <- plot_all_inhaler_overlay(data)
-#'
 plot_all_inhaler_overlay <- function(
     data,
     test_module = "INHALER",
@@ -202,21 +149,17 @@ plot_all_inhaler_overlay <- function(
     verbose = TRUE
 ) {
 
-  # Create output directory if needed
   if (!dir.exists(output_dir)) {
     dir.create(output_dir, recursive = TRUE)
   }
 
-  # Subset formulations if specified
   if (!is.null(formulations)) {
     data <- data %>% filter(formulation %in% formulations)
   }
 
-  # Filter to test module only
   plot_data <- data %>%
     filter(module == test_module)
 
-  # Calculate summary statistics
   summary_data <- plot_data %>%
     group_by(formulation, particle_size_um) %>%
     summarise(
@@ -226,7 +169,6 @@ plot_all_inhaler_overlay <- function(
     ) %>%
     mutate(q3_percent_sd = ifelse(is.na(q3_percent_sd), 0, q3_percent_sd))
 
-  # Create plot with viridis color scale for formulations
   n_formulations <- n_distinct(summary_data$formulation)
 
   p <- ggplot(summary_data, aes(x = particle_size_um, y = q3_percent_mean,
@@ -265,7 +207,6 @@ plot_all_inhaler_overlay <- function(
       plot.subtitle = element_text(size = 12)
     )
 
-  # Save as PDF
   output_path <- file.path(output_dir, filename)
   ggsave(output_path, p, width = width, height = height, device = "pdf")
 
@@ -276,26 +217,10 @@ plot_all_inhaler_overlay <- function(
   return(p)
 }
 
-
 # ==============================================================================
 # FUNCTION 2: Plot Particle Size Density (PSD)
 # ==============================================================================
 
-#' Plot Particle Size Density Distribution
-#'
-#' Shows the derivative of the CDF (density) on log scale, which better
-#' reveals multimodal distributions and fine particle populations.
-#'
-#' @param data Standardized data from read_ld_data_from_structure()
-#' @param reference_module Character string for reference (default: "RODOS")
-#' @param test_module Character string for test (default: "INHALER")
-#' @param formulations Optional character vector to subset formulations
-#' @param color_palette Named vector of colors for modules
-#' @param facet_by Facet plots by formulation? (default: TRUE)
-#' @param ncol Number of columns for faceting (default: 3)
-#'
-#' @return ggplot object
-#'
 plot_psd_density <- function(
     data,
     reference_module = "RODOS",
@@ -306,26 +231,22 @@ plot_psd_density <- function(
     ncol = 3
 ) {
 
-  # Subset formulations if specified
   if (!is.null(formulations)) {
     data <- data %>% filter(formulation %in% formulations)
   }
 
-  # Filter to only reference and test modules
   plot_data <- data %>%
     filter(module %in% c(reference_module, test_module))
 
-  # Calculate density (dQ3/d(log x)) by numerical differentiation
   psd_data <- plot_data %>%
     arrange(formulation, module, replicate, particle_size_um) %>%
     group_by(formulation, module, replicate) %>%
     mutate(
       log_size = log10(particle_size_um),
-      dQ3_dlogx = c(0, diff(q3_percent) / diff(log_size))  # Numerical derivative
+      dQ3_dlogx = c(0, diff(q3_percent) / diff(log_size))
     ) %>%
     ungroup()
 
-  # Calculate mean and SD
   psd_summary <- psd_data %>%
     group_by(formulation, module, particle_size_um) %>%
     summarise(
@@ -335,13 +256,11 @@ plot_psd_density <- function(
     ) %>%
     mutate(dQ3_dlogx_sd = ifelse(is.na(dQ3_dlogx_sd), 0, dQ3_dlogx_sd))
 
-  # Ensure module is a factor
   psd_summary$module <- factor(
     psd_summary$module,
     levels = c(reference_module, test_module)
   )
 
-  # Create plot
   p <- ggplot(psd_summary, aes(x = particle_size_um, y = dQ3_dlogx_mean,
                                 color = module, fill = module)) +
     geom_ribbon(
@@ -382,37 +301,10 @@ plot_psd_density <- function(
   return(p)
 }
 
-
 # ==============================================================================
 # FUNCTION 3: Plot Wasserstein Distance Bar Chart
 # ==============================================================================
 
-#' Plot Wasserstein Distance Bar Chart
-#'
-#' Visualizes W1 distances across formulations, ranked by dispersibility.
-#' Lower W1 = better dispersibility.
-#'
-#' @param w1_results Results tibble from calculate_pairwise_wasserstein()
-#' @param metric Character string: "W1_micrometers" or "W1_normalized"
-#' @param sort_by Should bars be sorted by W1 value? (default: TRUE)
-#' @param bar_color Color for bars (default: "#1F78B4")
-#' @param show_values Show W1 values on bars? (default: TRUE)
-#' @param save_plot Should plot be saved? (default: FALSE)
-#' @param output_dir Directory to save plot (default: "figures")
-#' @param filename Filename for saved plot (default: "w1_ranking.png")
-#' @param width Plot width in inches (default: 10)
-#' @param height Plot height in inches (default: 6)
-#' @param dpi Plot resolution (default: 300)
-#'
-#' @return ggplot object
-#'
-#' @examples
-#' # Absolute W1, sorted by dispersibility
-#' p1 <- plot_w1_bars(w1_results, metric = "W1_micrometers")
-#'
-#' # Normalized W1
-#' p2 <- plot_w1_bars(w1_results, metric = "W1_normalized")
-#'
 plot_w1_bars <- function(
     w1_results,
     metric = "W1_micrometers",
@@ -421,36 +313,31 @@ plot_w1_bars <- function(
     show_values = TRUE,
     save_plot = FALSE,
     output_dir = "figures",
-    filename = "w1_ranking.png",
+    filename = "w1_ranking.pdf",  # <-- CHANGED default to PDF
     width = 10,
     height = 6,
     dpi = 300
 ) {
 
-  # Validate metric
   if (!metric %in% c("W1_micrometers", "W1_normalized")) {
     stop("metric must be 'W1_micrometers' or 'W1_normalized'")
   }
 
-  # Prepare data
   plot_data <- w1_results %>%
     select(formulation, all_of(metric))
 
-  # Sort if requested
   if (sort_by) {
     plot_data <- plot_data %>%
       arrange(!!sym(metric)) %>%
       mutate(formulation = factor(formulation, levels = formulation))
   }
 
-  # Determine y-axis label
   y_label <- if (metric == "W1_micrometers") {
     "Wasserstein Distance W₁ (µm)"
   } else {
     "Normalized Wasserstein Distance (W₁/d₅₀)"
   }
 
-  # Create plot
   p <- ggplot(plot_data, aes(x = formulation, y = !!sym(metric))) +
     geom_col(fill = bar_color, color = "black", linewidth = 0.3) +
     labs(
@@ -468,7 +355,6 @@ plot_w1_bars <- function(
       plot.subtitle = element_text(size = 12)
     )
 
-  # Add value labels if requested
   if (show_values) {
     p <- p + geom_text(
       aes(label = sprintf("%.3f", !!sym(metric))),
@@ -478,42 +364,35 @@ plot_w1_bars <- function(
     )
   }
 
-  # Save if requested
+  # Save if requested (robust: device follows extension; dpi only for raster)
   if (save_plot) {
     if (!dir.exists(output_dir)) {
       dir.create(output_dir, recursive = TRUE)
     }
+
     output_path <- file.path(output_dir, filename)
-    ggsave(output_path, p, width = width, height = height, dpi = dpi)
+    ext <- tolower(tools::file_ext(filename))
+
+    if (ext %in% c("png", "tif", "tiff", "jpg", "jpeg")) {
+      ggsave(output_path, p, width = width, height = height, dpi = dpi)
+    } else if (ext == "pdf") {
+      # cairo_pdf tends to render symbols (µ, subscripts) very cleanly
+      ggsave(output_path, p, width = width, height = height, device = cairo_pdf)
+    } else {
+      # Fallback: let ggsave infer device from extension
+      ggsave(output_path, p, width = width, height = height)
+    }
+
     cat("✓ Saved:", output_path, "\n")
   }
 
   return(p)
 }
 
-
 # ==============================================================================
 # FUNCTION 4: Plot d50 Comparison
 # ==============================================================================
 
-#' Plot d50 Comparison Bar Chart
-#'
-#' Compares median particle diameters between reference and test conditions.
-#' Shows the d50 shift (test - reference) visually.
-#'
-#' @param w1_results Results tibble from calculate_pairwise_wasserstein()
-#' @param sort_by Sort by d50_shift? (default: TRUE)
-#' @param reference_color Color for reference bars (default: "#E31A1C")
-#' @param test_color Color for test bars (default: "#1F78B4")
-#' @param save_plot Should plot be saved? (default: FALSE)
-#' @param output_dir Directory to save plot (default: "figures")
-#' @param filename Filename for saved plot (default: "d50_comparison.png")
-#' @param width Plot width in inches (default: 10)
-#' @param height Plot height in inches (default: 6)
-#' @param dpi Plot resolution (default: 300)
-#'
-#' @return ggplot object
-#'
 plot_d50_comparison <- function(
     w1_results,
     sort_by = TRUE,
@@ -527,7 +406,6 @@ plot_d50_comparison <- function(
     dpi = 300
 ) {
 
-  # Reshape data for plotting
   plot_data <- w1_results %>%
     select(formulation, d50_reference_um, d50_test_um) %>%
     pivot_longer(
@@ -541,7 +419,6 @@ plot_d50_comparison <- function(
                         d50_test_um = "Test")
     )
 
-  # Sort by d50 shift if requested
   if (sort_by) {
     order_levels <- w1_results %>%
       arrange(d50_shift_um) %>%
@@ -551,7 +428,6 @@ plot_d50_comparison <- function(
       mutate(formulation = factor(formulation, levels = order_levels))
   }
 
-  # Create plot
   p <- ggplot(plot_data, aes(x = formulation, y = d50, fill = condition)) +
     geom_col(position = position_dodge(width = 0.8),
              color = "black", linewidth = 0.3) +
@@ -576,7 +452,6 @@ plot_d50_comparison <- function(
       plot.subtitle = element_text(size = 12)
     )
 
-  # Save if requested
   if (save_plot) {
     if (!dir.exists(output_dir)) {
       dir.create(output_dir, recursive = TRUE)
@@ -589,36 +464,10 @@ plot_d50_comparison <- function(
   return(p)
 }
 
-
 # ==============================================================================
 # FUNCTION 5: Create Publication Figure Panel
 # ==============================================================================
 
-#' Create Multi-Panel Publication Figure
-#'
-#' Combines multiple plots into a publication-ready figure using patchwork.
-#' Default layout: CDF comparison + W1 bars + d50 comparison
-#'
-#' @param data Standardized data from read_ld_data_from_structure()
-#' @param w1_results Results tibble from calculate_pairwise_wasserstein()
-#' @param layout Character string specifying layout:
-#'   "horizontal" (default), "vertical", or "grid"
-#' @param reference_module Reference module name (default: "RODOS")
-#' @param test_module Test module name (default: "INHALER")
-#' @param save_plot Should plot be saved? (default: FALSE)
-#' @param output_dir Directory to save plot (default: "figures")
-#' @param filename Filename for saved plot (default: "dispersibility_panel.png")
-#' @param width Plot width in inches (default: 16)
-#' @param height Plot height in inches (default: 12)
-#' @param dpi Plot resolution (default: 300)
-#'
-#' @return patchwork object (combined ggplot)
-#'
-#' @examples
-#' # Create full panel
-#' fig <- create_publication_panel(data, w1_results)
-#' ggsave("Figure_Dispersibility.png", fig, width = 16, height = 12, dpi = 300)
-#'
 create_publication_panel <- function(
     data,
     w1_results,
@@ -633,12 +482,10 @@ create_publication_panel <- function(
     dpi = 300
 ) {
 
-  # Create individual plots
   p1 <- plot_cdf_comparison(data, reference_module, test_module, facet_by = TRUE)
   p2 <- plot_w1_bars(w1_results, metric = "W1_micrometers")
   p3 <- plot_d50_comparison(w1_results)
 
-  # Combine based on layout
   if (layout == "horizontal") {
     combined <- p1 / (p2 | p3)
   } else if (layout == "vertical") {
@@ -649,14 +496,12 @@ create_publication_panel <- function(
     stop("layout must be 'horizontal', 'vertical', or 'grid'")
   }
 
-  # Add panel labels
   combined <- combined +
     plot_annotation(
       tag_levels = 'A',
       theme = theme(plot.tag = element_text(face = "bold", size = 16))
     )
 
-  # Save if requested
   if (save_plot) {
     if (!dir.exists(output_dir)) {
       dir.create(output_dir, recursive = TRUE)
@@ -669,31 +514,10 @@ create_publication_panel <- function(
   return(combined)
 }
 
-
 # ==============================================================================
 # CONVENIENCE FUNCTION: Generate all standard plots
 # ==============================================================================
 
-#' Generate All Standard Dispersibility Plots
-#'
-#' Convenience wrapper that creates and saves key visualizations:
-#' - Individual PDFs for each formulation (RODOS vs INHALER)
-#' - Overlay PDF of all INHALER distributions
-#' - W1 ranking bars (PNG)
-#'
-#' @param data Standardized data from 01_data_import.R
-#' @param w1_results Wasserstein results from 02_wasserstein_core.R
-#' @param output_dir Directory to save plots (default: "figures")
-#' @param reference_module Reference module name (default: "RODOS")
-#' @param test_module Test module name (default: "INHALER")
-#' @param verbose Print progress? (default: TRUE)
-#'
-#' @return Named list of plot objects
-#'
-#' @examples
-#' # Generate standard plots
-#' plots <- generate_all_plots(data, w1_results)
-#'
 generate_all_plots <- function(
     data,
     w1_results,
@@ -711,13 +535,11 @@ generate_all_plots <- function(
     cat("------------------------------------------------------------------------\n")
   }
 
-  # Create output directory if needed
   if (!dir.exists(output_dir)) {
     dir.create(output_dir, recursive = TRUE)
     if (verbose) cat("Created output directory:", output_dir, "\n")
   }
 
-  # Generate individual formulation PDFs
   if (verbose) cat("Creating individual formulation comparison PDFs...\n")
   p_individual <- plot_individual_formulation_pdfs(
     data,
@@ -727,7 +549,6 @@ generate_all_plots <- function(
     verbose = verbose
   )
 
-  # Generate overlay of all INHALER distributions
   if (verbose) cat("Creating INHALER overlay PDF...\n")
   p_overlay <- plot_all_inhaler_overlay(
     data,
@@ -737,14 +558,13 @@ generate_all_plots <- function(
     verbose = verbose
   )
 
-  # Generate W1 ranking plot
   if (verbose) cat("Creating W1 ranking plot...\n")
   p_w1 <- plot_w1_bars(
     w1_results,
     metric = "W1_micrometers",
     save_plot = TRUE,
     output_dir = output_dir,
-    filename = "w1_ranking.png",
+    filename = "w1_ranking.pdf",  # <-- CHANGED to PDF
     width = 10,
     height = 6
   )
@@ -755,7 +575,6 @@ generate_all_plots <- function(
     cat("========================================================================\n\n")
   }
 
-  # Return plots as named list (invisible so they don't print to console)
   return(invisible(list(
     individual = p_individual,
     overlay = p_overlay,
@@ -763,12 +582,10 @@ generate_all_plots <- function(
   )))
 }
 
-
 # ==============================================================================
 # AUTO-EXECUTION: Generate plots when script is sourced
 # ==============================================================================
 
-# Check if required data files exist
 tidy_data_exists <- file.exists("data/tidy/standardized_data.csv")
 results_exist <- file.exists("results/wasserstein_results.csv")
 
@@ -782,11 +599,9 @@ if (tidy_data_exists && results_exist) {
   cat("Saving to: figures/\n")
   cat("------------------------------------------------------------------------\n")
 
-  # Load data
   .viz_data <- read_csv("data/tidy/standardized_data.csv", show_col_types = FALSE)
   .viz_results <- read_csv("results/wasserstein_results.csv", show_col_types = FALSE)
 
-  # Generate all plots
   .viz_plots <- generate_all_plots(
     data = .viz_data,
     w1_results = .viz_results,
@@ -800,16 +615,12 @@ if (tidy_data_exists && results_exist) {
   n_formulations <- n_distinct(.viz_data$formulation)
   cat("  - figures/*_comparison.pdf (", n_formulations, " individual formulation PDFs)\n", sep = "")
   cat("  - figures/all_inhaler_overlay.pdf (all INHALER distributions)\n")
-  cat("  - figures/w1_ranking.png (dispersibility ranking)\n")
+  cat("  - figures/w1_ranking.pdf (dispersibility ranking)\n")  # <-- CHANGED to PDF
   cat("------------------------------------------------------------------------\n")
   cat("Additional plots available via functions:\n")
   cat("  - plot_d50_comparison() for median size comparison\n")
   cat("  - create_publication_panel() for combined figures\n")
   cat("========================================================================\n\n")
-
-  # Clean up auto-generated variables (optional)
-  # Uncomment if you don't want these in the environment
-  # rm(.viz_data, .viz_results, .viz_plots)
 
 } else {
   cat("\n========================================================================\n")
