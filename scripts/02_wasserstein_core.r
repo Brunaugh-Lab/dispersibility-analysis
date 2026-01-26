@@ -4,6 +4,10 @@
 #
 # Purpose: Calculate W1 distance between test and reference particle size
 #          distributions following proper methodology (pool replicates first)
+#          Automatically reads processed data and saves results.
+#
+# Input: processed/standardized_data.csv (from 01_data_import.R)
+# Output: results/wasserstein_results.csv
 #
 # Methodology: Wasserstein-1 (Earth Mover's) distance quantifies the minimum
 #              redistribution work needed to transform one distribution into another
@@ -149,6 +153,9 @@ calculate_wasserstein_1d <- function(size_grid, cdf_test, cdf_ref) {
 #' @param data Standardized data from read_ld_data_from_structure()
 #' @param reference_module Character string for reference condition (default: "RODOS")
 #' @param test_module Character string for test condition (default: "INHALER")
+#' @param output_dir Directory to save results. Default: "results/"
+#' @param save_output Should results be saved to CSV? Default: TRUE
+#' @param output_filename Name of output file. Default: "wasserstein_results.csv"
 #' @param verbose Print progress messages? (default: TRUE)
 #'
 #' @return Tibble with W1 results:
@@ -160,23 +167,27 @@ calculate_wasserstein_1d <- function(size_grid, cdf_test, cdf_ref) {
 #'   - d50_shift_um: Test d50 minus reference d50 (µm)
 #'
 #' @examples
-#' # Basic usage after importing data
-#' source("scripts/01_data_import.R")
-#' data <- read_ld_data_from_structure("data/")
-#'
-#' # Calculate W1 distances
-#' w1_results <- calculate_pairwise_wasserstein(
-#'   data,
-#'   reference_module = "RODOS",
-#'   test_module = "INHALER"
-#' )
+#' # After running 01_data_import.R
+#' source("scripts/02_wasserstein_core.R")
+#' w1_results <- calculate_pairwise_wasserstein(data)
 #'
 calculate_pairwise_wasserstein <- function(
     data,
     reference_module = "RODOS",
     test_module = "INHALER",
+    output_dir = "results",
+    save_output = TRUE,
+    output_filename = "wasserstein_results.csv",
     verbose = TRUE
 ) {
+
+  # Create output directory if needed
+  if (save_output && !dir.exists(output_dir)) {
+    dir.create(output_dir, recursive = TRUE)
+    if (verbose) {
+      cat("Created output directory:", output_dir, "\n")
+    }
+  }
 
   if (verbose) {
     cat("\n========================================================================\n")
@@ -185,6 +196,9 @@ calculate_pairwise_wasserstein <- function(
     cat("Reference condition:", reference_module, "\n")
     cat("Test condition:", test_module, "\n")
     cat("Methodology: Pool replicates → Calculate W1\n")
+    if (save_output) {
+      cat("Output file:", file.path(output_dir, output_filename), "\n")
+    }
     cat("------------------------------------------------------------------------\n\n")
   }
 
@@ -271,6 +285,17 @@ calculate_pairwise_wasserstein <- function(
     cat(sprintf("  Mean W1/d50: %.4f (SD = %.4f)\n",
                 mean(results$W1_normalized), sd(results$W1_normalized)))
     cat("========================================================================\n\n")
+  }
+
+  # Save output if requested
+  if (save_output) {
+    output_path <- file.path(output_dir, output_filename)
+    write_csv(results, output_path)
+
+    if (verbose) {
+      cat("✓ Results saved to:", output_path, "\n")
+      cat("  Use W1_micrometers for DoE modeling\n\n")
+    }
   }
 
   return(results)
@@ -417,38 +442,158 @@ validate_wasserstein_results <- function(w1_results, max_w1_normalized = 2.0) {
 
 
 # ==============================================================================
-# EXAMPLE USAGE
+# CONVENIENCE FUNCTIONS: Load and run with defaults
 # ==============================================================================
 
-# Uncomment to test with your data:
-#
-# # Step 1: Load data import script
-# source("scripts/01_data_import.R")
-#
-# # Step 2: Import data
-# data <- read_ld_data_from_structure(
-#   data_directory = "data/",
-#   formulation_pattern = ".*",
-#   replicate_pattern = "[Rr]ep_?\\d+",
-#   verbose = TRUE
-# )
-#
-# # Step 3: Standardize replicate names
-# data <- data %>% mutate(replicate = tolower(replicate))
-#
-# # Step 4: Calculate Wasserstein distances
-# w1_results <- calculate_pairwise_wasserstein(
-#   data,
-#   reference_module = "RODOS",
-#   test_module = "INHALER",
-#   verbose = TRUE
-# )
-#
-# # Step 5: Validate results
-# validate_wasserstein_results(w1_results)
-#
-# # Step 6: View results
-# print(w1_results, n = Inf)
-#
-# # Step 7: Save results
-# write_csv(w1_results, "wasserstein_results.csv")
+#' Load Previously Calculated Wasserstein Results
+#'
+#' Quickly loads the W1 results saved by calculate_pairwise_wasserstein()
+#'
+#' @param results_dir Directory containing results. Default: "results/"
+#' @param filename Name of results file. Default: "wasserstein_results.csv"
+#' @param verbose Print loading message? Default: TRUE
+#'
+#' @return Tibble with W1 results
+#'
+#' @examples
+#' # Load previously calculated W1 distances
+#' w1_results <- load_wasserstein_results()
+#'
+load_wasserstein_results <- function(
+    results_dir = "results",
+    filename = "wasserstein_results.csv",
+    verbose = TRUE
+) {
+
+  file_path <- file.path(results_dir, filename)
+
+  if (!file.exists(file_path)) {
+    stop("Results file not found: ", file_path,
+         "\nRun calculate_pairwise_wasserstein() first to create this file.")
+  }
+
+  if (verbose) {
+    cat("Loading W1 results from:", file_path, "\n")
+  }
+
+  results <- read_csv(file_path, show_col_types = FALSE)
+
+  if (verbose) {
+    cat("✓ Loaded results for", nrow(results), "formulations\n")
+    cat("  W1 range:", sprintf("%.4f - %.4f µm\n",
+                              min(results$W1_micrometers),
+                              max(results$W1_micrometers)))
+  }
+
+  return(results)
+}
+
+
+#' Run Complete Wasserstein Analysis with Auto-Load
+#'
+#' Convenience wrapper that:
+#' 1. Auto-loads processed/standardized_data.csv
+#' 2. Calculates W1 distances
+#' 3. Auto-saves to results/wasserstein_results.csv
+#' 4. Validates results
+#'
+#' @param processed_dir Directory with processed data. Default: "processed/"
+#' @param results_dir Directory to save results. Default: "results/"
+#' @param reference_module Reference condition name. Default: "RODOS"
+#' @param test_module Test condition name. Default: "INHALER"
+#' @param verbose Print progress? Default: TRUE
+#'
+#' @return Tibble with W1 results
+#'
+#' @examples
+#' # Simple one-liner after running 01_data_import.R
+#' source("scripts/02_wasserstein_core.R")
+#' w1_results <- run_wasserstein_analysis()
+#'
+run_wasserstein_analysis <- function(
+    processed_dir = "processed",
+    results_dir = "results",
+    reference_module = "RODOS",
+    test_module = "INHALER",
+    verbose = TRUE
+) {
+
+  # Load processed data
+  data_file <- file.path(processed_dir, "standardized_data.csv")
+
+  if (!file.exists(data_file)) {
+    stop("Processed data not found: ", data_file,
+         "\nRun 01_data_import.R first to create this file.")
+  }
+
+  if (verbose) {
+    cat("Loading processed data from:", data_file, "\n")
+  }
+
+  data <- read_csv(data_file, show_col_types = FALSE)
+
+  if (verbose) {
+    cat("✓ Loaded", nrow(data), "rows\n")
+    cat("  Formulations:", n_distinct(data$formulation), "\n")
+    cat("  Modules:", paste(unique(data$module), collapse = ", "), "\n")
+  }
+
+  # Calculate W1 distances
+  w1_results <- calculate_pairwise_wasserstein(
+    data,
+    reference_module = reference_module,
+    test_module = test_module,
+    output_dir = results_dir,
+    save_output = TRUE,
+    verbose = verbose
+  )
+
+  # Validate results
+  validate_wasserstein_results(w1_results)
+
+  return(w1_results)
+}
+
+
+# ==============================================================================
+# AUTO-EXECUTION: Run analysis when script is sourced
+# ==============================================================================
+
+# Check if processed data exists
+if (file.exists("processed/standardized_data.csv")) {
+
+  cat("\n========================================================================\n")
+  cat("AUTO-RUNNING WASSERSTEIN ANALYSIS\n")
+  cat("========================================================================\n")
+  cat("Reading: processed/standardized_data.csv\n")
+  cat("Saving to: results/wasserstein_results.csv\n")
+  cat("------------------------------------------------------------------------\n")
+
+  # Run the complete analysis
+  .w1_results <- run_wasserstein_analysis(verbose = TRUE)
+
+  cat("\n========================================================================\n")
+  cat("ANALYSIS COMPLETE - Results saved to results/wasserstein_results.csv\n")
+  cat("========================================================================\n")
+  cat("Use W1_micrometers column for DoE modeling\n")
+  cat("------------------------------------------------------------------------\n")
+  cat("To reload results later:\n")
+  cat("  source('scripts/02_wasserstein_core.R')\n")
+  cat("  w1_results <- load_wasserstein_results()\n")
+  cat("========================================================================\n\n")
+
+  # Clean up the auto-generated variable (optional - keeps workspace clean)
+  # Uncomment if you don't want .w1_results in the environment
+  # rm(.w1_results)
+
+} else {
+  cat("\n========================================================================\n")
+  cat("WASSERSTEIN ANALYSIS - WAITING FOR INPUT DATA\n")
+  cat("========================================================================\n")
+  cat("Processed data not found: processed/standardized_data.csv\n")
+  cat("\nPlease run 01_data_import.R first:\n")
+  cat("  source('scripts/01_data_import.R')\n")
+  cat("\nThen run this script again:\n")
+  cat("  source('scripts/02_wasserstein_core.R')\n")
+  cat("========================================================================\n\n")
+}
