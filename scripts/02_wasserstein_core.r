@@ -6,11 +6,19 @@
 #          distributions following proper methodology (pool replicates first)
 #          Automatically reads processed data and saves results.
 #
-# Input: processed/standardized_data.csv (from 01_data_import.R)
+# Auto-execution: Script automatically runs when sourced
+#   - Reads data/tidy/standardized_data.csv (from script 01)
+#   - Calculates W1 distances for all formulations
+#   - Saves to results/wasserstein_results.csv
+#
+# Input: data/tidy/standardized_data.csv (from 01_data_import.R)
 # Output: results/wasserstein_results.csv
 #
 # Methodology: Wasserstein-1 (Earth Mover's) distance quantifies the minimum
 #              redistribution work needed to transform one distribution into another
+#
+# Usage:
+#   source("scripts/02_wasserstein_core.R")  # That's it!
 #
 # Reference: Brunaugh et al. (2025) Pharmaceutics - "A Distribution-Based Metric
 #            for Quantifying Dispersibility in Dry Powder Inhalers"
@@ -492,12 +500,12 @@ load_wasserstein_results <- function(
 #' Run Complete Wasserstein Analysis with Auto-Load
 #'
 #' Convenience wrapper that:
-#' 1. Auto-loads processed/standardized_data.csv
+#' 1. Auto-loads data/tidy/standardized_data.csv
 #' 2. Calculates W1 distances
 #' 3. Auto-saves to results/wasserstein_results.csv
 #' 4. Validates results
 #'
-#' @param processed_dir Directory with processed data. Default: "processed/"
+#' @param processed_dir Directory with tidy data. Default: "data/tidy/"
 #' @param results_dir Directory to save results. Default: "results/"
 #' @param reference_module Reference condition name. Default: "RODOS"
 #' @param test_module Test condition name. Default: "INHALER"
@@ -511,7 +519,7 @@ load_wasserstein_results <- function(
 #' w1_results <- run_wasserstein_analysis()
 #'
 run_wasserstein_analysis <- function(
-    processed_dir = "processed",
+    processed_dir = "data/tidy",
     results_dir = "results",
     reference_module = "RODOS",
     test_module = "INHALER",
@@ -560,12 +568,12 @@ run_wasserstein_analysis <- function(
 # ==============================================================================
 
 # Check if processed data exists
-if (file.exists("processed/standardized_data.csv")) {
+if (file.exists("data/tidy/standardized_data.csv")) {
 
   cat("\n========================================================================\n")
   cat("AUTO-RUNNING WASSERSTEIN ANALYSIS\n")
   cat("========================================================================\n")
-  cat("Reading: processed/standardized_data.csv\n")
+  cat("Reading: data/tidy/standardized_data.csv\n")
   cat("Saving to: results/wasserstein_results.csv\n")
   cat("------------------------------------------------------------------------\n")
 
@@ -590,7 +598,7 @@ if (file.exists("processed/standardized_data.csv")) {
   cat("\n========================================================================\n")
   cat("WASSERSTEIN ANALYSIS - WAITING FOR INPUT DATA\n")
   cat("========================================================================\n")
-  cat("Processed data not found: processed/standardized_data.csv\n")
+  cat("Tidy data not found: data/tidy/standardized_data.csv\n")
   cat("\nPlease run 01_data_import.R first:\n")
   cat("  source('scripts/01_data_import.R')\n")
   cat("\nThen run this script again:\n")

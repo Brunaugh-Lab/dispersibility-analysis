@@ -12,8 +12,8 @@ This toolkit calculates **dispersibility metrics** for dry powder inhalers by:
 **Physical interpretation:** Lower W₁ = better dispersibility (closer to fully dispersed state)
 
 **Pipeline workflow:**
-- Script 01: Reads raw data → Saves `processed/standardized_data.csv`
-- Script 02: Reads processed data → Saves `results/wasserstein_results.csv`
+- Script 01: Reads raw data → Saves `data/tidy/standardized_data.csv`
+- Script 02: Reads tidy data → Saves `results/wasserstein_results.csv`
 - Script 03: Reads both → Generates figures
 
 Each script is **standalone** and auto-creates needed folders/files.
@@ -26,7 +26,7 @@ Organize your laser diffraction data like this:
 
 ```
 Wasserstein_DPI/
-├── data/                      # Raw CSV files (never modified)
+├── data/                      # Raw CSV files and tidy data
 │   ├── FormulationA/          # Any formulation naming scheme works!
 │   │   ├── inhaler/            # Inhaler dispersion data (lowercase or UPPERCASE)
 │   │   │   ├── rep1.csv
@@ -39,9 +39,9 @@ Wasserstein_DPI/
 │   ├── FormulationB/
 │   │   ├── inhaler/
 │   │   └── rodos/
-│   └── ...
-├── processed/                 # Auto-created by 01_data_import.R
-│   └── standardized_data.csv  # Cleaned data for analysis
+│   ├── ...
+│   └── tidy/                   # Auto-created by 01_data_import.R
+│       └── standardized_data.csv  # Cleaned data for analysis
 ├── results/                   # Auto-created by 02_wasserstein_core.R
 │   └── wasserstein_results.csv
 └── scripts/
@@ -97,7 +97,7 @@ source("scripts/01_data_import.R")
 
 ### Step 4: Import Your Data
 
-**RECOMMENDED - Basic usage (auto-saves to processed/standardized_data.csv):**
+**RECOMMENDED - Basic usage (auto-saves to data/tidy/standardized_data.csv):**
 
 ```r
 data <- read_ld_data_from_structure(
@@ -110,8 +110,8 @@ data <- read_ld_data_from_structure(
 ```
 
 **What this does automatically:**
-- ✓ Creates `processed/` folder if it doesn't exist
-- ✓ Saves cleaned data to `processed/standardized_data.csv`
+- ✓ Creates `data/tidy/` folder if it doesn't exist
+- ✓ Saves cleaned data to `data/tidy/standardized_data.csv`
 - ✓ Standardizes replicate names to lowercase (rep1, rep2, rep3)
 - ✓ Validates data structure
 
@@ -264,7 +264,7 @@ Successfully calculated W1 for 7 formulations
 | `replicate` | Replicate identifier (auto-standardized) | "rep1", "rep2", "rep3" |
 | `source_file` | Full path to original CSV | "data/FormA/inhaler/rep1.csv" |
 
-**Saved file** - `processed/standardized_data.csv`
+**Saved file** - `data/tidy/standardized_data.csv`
 - Cleaned and validated data ready for analysis
 - Can be quickly reloaded with `load_standardized_data()`
 - Used by downstream scripts (02, 03)
@@ -457,7 +457,7 @@ data <- read_ld_data_from_structure(
   data_directory = "data/",
   formulation_pattern = ".*",           # Use entire folder name
   replicate_pattern = "[Rr]ep_?\\d+",   # Flexible replicate matching
-  save_output = TRUE,                   # Auto-saves to processed/
+  save_output = TRUE,                   # Auto-saves to data/tidy/
   verbose = TRUE
 )
 

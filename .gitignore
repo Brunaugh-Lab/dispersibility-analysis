@@ -12,8 +12,6 @@
 # Ignore all data directories and their contents
 data/
 raw_data/
-processed/
-processed_data/
 
 # Exception: Keep directory structure with .gitkeep files
 !**/.gitkeep

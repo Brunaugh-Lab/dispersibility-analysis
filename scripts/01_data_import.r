@@ -25,8 +25,9 @@
 #       └── ...
 #
 # Output Structure (auto-created):
-#   processed/
-#   └── standardized_data.csv
+#   data/
+#   └── tidy/
+#       └── standardized_data.csv
 #
 # Usage:
 #   source("scripts/01_data_import.R")  # That's it!
@@ -59,7 +60,7 @@ library(janitor)
 #' @param module_folders Character vector of folder names that indicate dispersion
 #'   modules. Default: c("inhaler", "INHALER", "rodos", "RODOS")
 #'   Function will standardize these to uppercase for consistency.
-#' @param output_dir Directory to save processed data. Default: "processed/"
+#' @param output_dir Directory to save tidy data. Default: "data/tidy/"
 #' @param save_output Should standardized data be saved to CSV? Default: TRUE
 #' @param output_filename Name of output file. Default: "standardized_data.csv"
 #' @param verbose Print progress messages? Default: TRUE
@@ -75,7 +76,7 @@ library(janitor)
 #'
 #' @details
 #' This function automatically:
-#' - Creates processed/ directory if needed
+#' - Creates data/tidy/ directory if needed
 #' - Saves standardized_data.csv for downstream scripts
 #' - Standardizes replicate names to lowercase
 #' - Extracts formulation ID from folder name (entire name by default)
@@ -96,7 +97,7 @@ read_ld_data_from_structure <- function(
     replicate_pattern = "[Rr]ep_?\\d+",  # Flexible: rep1, Rep1, rep_1, Rep_1
     skip_rows = 2,
     module_folders = c("inhaler", "INHALER", "rodos", "RODOS"),
-    output_dir = "processed",
+    output_dir = "data/tidy",
     save_output = TRUE,
     output_filename = "standardized_data.csv",
     verbose = TRUE
@@ -354,7 +355,7 @@ validate_ld_data <- function(data, check_replicates = TRUE, min_replicates = 3) 
 #' Quickly loads the standardized data saved by read_ld_data_from_structure()
 #' without re-reading all raw CSV files.
 #'
-#' @param processed_dir Directory containing processed data. Default: "processed/"
+#' @param processed_dir Directory containing tidy data. Default: "data/tidy/"
 #' @param filename Name of standardized data file. Default: "standardized_data.csv"
 #' @param verbose Print loading message? Default: TRUE
 #'
@@ -365,7 +366,7 @@ validate_ld_data <- function(data, check_replicates = TRUE, min_replicates = 3) 
 #' data <- load_standardized_data()
 #'
 load_standardized_data <- function(
-    processed_dir = "processed",
+    processed_dir = "data/tidy",
     filename = "standardized_data.csv",
     verbose = TRUE
 ) {
@@ -453,14 +454,14 @@ if (dir.exists("data")) {
   cat("AUTO-RUNNING DATA IMPORT\n")
   cat("========================================================================\n")
   cat("Reading from: data/\n")
-  cat("Saving to: processed/standardized_data.csv\n")
+  cat("Saving to: data/tidy/standardized_data.csv\n")
   cat("------------------------------------------------------------------------\n")
 
   # Run the import with defaults
   .standardized_data <- run_data_import(verbose = TRUE)
 
   cat("\n========================================================================\n")
-  cat("IMPORT COMPLETE - Data saved to processed/standardized_data.csv\n")
+  cat("IMPORT COMPLETE - Data saved to data/tidy/standardized_data.csv\n")
   cat("========================================================================\n")
   cat("Next step: Run Wasserstein analysis\n")
   cat("  source('scripts/02_wasserstein_core.R')\n")
