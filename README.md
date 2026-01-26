@@ -11,6 +11,13 @@ This toolkit calculates **dispersibility metrics** for dry powder inhalers by:
 
 **Physical interpretation:** Lower W₁ = better dispersibility (closer to fully dispersed state)
 
+**Pipeline workflow:**
+- Script 01: Reads raw data → Saves `processed/standardized_data.csv`
+- Script 02: Reads processed data → Saves `results/wasserstein_results.csv`
+- Script 03: Reads both → Generates figures
+
+Each script is **standalone** and auto-creates needed folders/files.
+
 ---
 
 ## 🗂️ Required Folder Structure
@@ -19,7 +26,7 @@ Organize your laser diffraction data like this:
 
 ```
 Wasserstein_DPI/
-├── data/
+├── data/                      # Raw CSV files (never modified)
 │   ├── FormulationA/          # Any formulation naming scheme works!
 │   │   ├── inhaler/            # Inhaler dispersion data (lowercase or UPPERCASE)
 │   │   │   ├── rep1.csv
@@ -33,10 +40,14 @@ Wasserstein_DPI/
 │   │   ├── inhaler/
 │   │   └── rodos/
 │   └── ...
+├── processed/                 # Auto-created by 01_data_import.R
+│   └── standardized_data.csv  # Cleaned data for analysis
+├── results/                   # Auto-created by 02_wasserstein_core.R
+│   └── wasserstein_results.csv
 └── scripts/
     ├── 01_data_import.R
-    ├── 02_wasserstein_core.R  (coming soon)
-    └── ...
+    ├── 02_wasserstein_core.R
+    └── 03_visualization.R
 ```
 
 **Formulation naming is flexible!** Examples of valid folder names:
@@ -86,22 +97,34 @@ source("scripts/01_data_import.R")
 
 ### Step 4: Import Your Data
 
-**RECOMMENDED - Basic usage (uses entire folder name as formulation ID):**
+**RECOMMENDED - Basic usage (auto-saves to processed/standardized_data.csv):**
 
 ```r
 data <- read_ld_data_from_structure(
   data_directory = "data/",
   formulation_pattern = ".*",            # Uses entire folder name (default)
   replicate_pattern = "[Rr]ep_?\\d+",    # Matches rep1, Rep1, rep_1, Rep_1
+  save_output = TRUE,                    # Default: saves cleaned data
   verbose = TRUE
 )
-
-# Standardize replicate names to lowercase for consistency
-data <- data %>%
-  mutate(replicate = tolower(replicate))
 ```
 
+**What this does automatically:**
+- ✓ Creates `processed/` folder if it doesn't exist
+- ✓ Saves cleaned data to `processed/standardized_data.csv`
+- ✓ Standardizes replicate names to lowercase (rep1, rep2, rep3)
+- ✓ Validates data structure
+
 This works for ANY folder naming scheme - the folder names become your formulation IDs.
+
+**Loading previously processed data (much faster!):**
+
+If you've already run the import once, you can quickly reload:
+
+```r
+# Fast reload without re-reading 40+ raw CSV files
+data <- load_standardized_data()
+```
 
 **Example project-specific patterns:**
 
@@ -227,9 +250,9 @@ Successfully calculated W1 for 7 formulations
 
 ## 📊 What You Get
 
-### After Data Import (Step 1-6)
+### After Data Import (Step 4)
 
-The imported `data` object is a tibble (data frame) with these columns:
+**In-memory R object** - The imported `data` tibble with these columns:
 
 | Column | Description | Example Values |
 |--------|-------------|----------------|
@@ -238,8 +261,13 @@ The imported `data` object is a tibble (data frame) with these columns:
 | `q3_cdf` | Cumulative distribution function (0-1) | 0, 0.105, 0.452, ... 1.0 |
 | `formulation` | Formulation identifier (from folder name) | "FormA", "Run2", "132067_IMT" |
 | `module` | Dispersion module (standardized) | "INHALER", "RODOS" |
-| `replicate` | Replicate identifier | "rep1", "rep2", "rep3" |
+| `replicate` | Replicate identifier (auto-standardized) | "rep1", "rep2", "rep3" |
 | `source_file` | Full path to original CSV | "data/FormA/inhaler/rep1.csv" |
+
+**Saved file** - `processed/standardized_data.csv`
+- Cleaned and validated data ready for analysis
+- Can be quickly reloaded with `load_standardized_data()`
+- Used by downstream scripts (02, 03)
 
 ### After Wasserstein Calculation (Step 7)
 
@@ -424,16 +452,17 @@ library(tidyverse)
 # ----------------------------------------------------------------------------
 source("scripts/01_data_import.R")
 
+# Option A: Full import from raw data (first time or when data changes)
 data <- read_ld_data_from_structure(
   data_directory = "data/",
   formulation_pattern = ".*",           # Use entire folder name
   replicate_pattern = "[Rr]ep_?\\d+",   # Flexible replicate matching
+  save_output = TRUE,                   # Auto-saves to processed/
   verbose = TRUE
 )
 
-# Standardize replicate names
-data <- data %>%
-  mutate(replicate = tolower(replicate))
+# Option B: Load previously processed data (subsequent runs - much faster!)
+# data <- load_standardized_data()
 
 # Validate data structure
 validate_ld_data(data, check_replicates = TRUE, min_replicates = 3)
@@ -496,15 +525,15 @@ Once your data is successfully imported and W1 distances calculated:
 
 1. ✅ **Import data** (`01_data_import.R`) - Complete!
 2. ✅ **Calculate Wasserstein distances** (`02_wasserstein_core.R`) - Complete!
-3. **Compute additional dispersibility metrics** (script coming soon: `03_dispersibility_metrics.R`)
-4. **Generate visualizations** (script coming soon: `04_visualization.R`)
+3. ✅ **Generate visualizations** (`03_visualization.R`) - Complete!
    - CDF comparison plots
    - W1 bar charts
-   - Dispersibility trends
-5. **Run statistical analysis** (script coming soon: `05_statistical_analysis.R`)
-   - Factor effects (Device, Pressure, Formulation)
-   - Variance decomposition
-   - Limitation assessment
+   - d50 comparisons
+   - Publication-ready panels
+4. **Run statistical analysis** (script coming soon)
+   - Mixture model fitting
+   - Component effects
+   - Composition-response relationships
 
 ---
 
