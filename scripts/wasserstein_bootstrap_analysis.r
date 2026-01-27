@@ -1,5 +1,5 @@
 # ==============================================================================
-# 04_bootstrap_analysis.R
+# wasserstein_bootstrap_analysis.R
 # Bootstrap Resampling for Wasserstein Distance Confidence Intervals
 #
 # Purpose: Generate empirical sampling distributions for W1 distances through
@@ -30,7 +30,7 @@
 #   5. Compare bootstrap variability to between-condition effects
 #
 # Usage:
-#   source("scripts/wassserstein_bootstrap_analysis.R")
+#   source("scripts/wasserstein_bootstrap_analysis.R")
 #
 # ==============================================================================
 library(tidyverse)
@@ -360,39 +360,39 @@ bootstrap_w1_analysis <- function(data, reference_module = "RODOS",
 #' Calculate Overall Effect-to-Noise Ratio
 #'
 #' Compares the overall variability of W1 values across all formulations
-#' to the average bootstrap-estimated measurement uncertainty. Higher ratios 
+#' to the average bootstrap-estimated measurement uncertainty. Higher ratios
 #' indicate that formulation differences exceed measurement variability.
 #'
 #' @param bootstrap_results Results from bootstrap_w1_analysis()
 #' @param output_dir Directory to save results (default: "results")
-#' @param save_output Should results be saved? (default: TRUE) 
+#' @param save_output Should results be saved? (default: TRUE)
 #' @param output_filename Output filename (default: "effect_noise_ratios.csv")
 #' @param verbose Print progress (default: TRUE)
 #'
 #' @return Tibble with effect-to-noise ratio
 #'
-calculate_effect_noise_ratios <- function(bootstrap_results, 
+calculate_effect_noise_ratios <- function(bootstrap_results,
                                          output_dir = "results",
                                          save_output = TRUE,
                                          output_filename = "effect_noise_ratios.csv",
                                          verbose = TRUE) {
-  
+
   if (verbose) {
     cat("\n========================================================================\n")
     cat("EFFECT-TO-NOISE RATIO ANALYSIS\n")
     cat("========================================================================\n")
     cat("Analysis: Overall formulation variability vs measurement uncertainty\n")
   }
-  
+
   # Calculate effect magnitude (between-formulation variability)
   effect_magnitude <- sd(bootstrap_results$w1_observed, na.rm = TRUE)
-  
+
   # Calculate noise level (average measurement uncertainty)
   noise_level <- mean(bootstrap_results$w1_sd, na.rm = TRUE)
-  
+
   # Calculate ratio
   effect_to_noise_ratio <- effect_magnitude / noise_level
-  
+
   # Create results
   ratio_results <- tibble(
     analysis_type = "overall_formulation_variability",
@@ -402,7 +402,7 @@ calculate_effect_noise_ratios <- function(bootstrap_results,
     n_formulations = nrow(bootstrap_results),
     interpretation = case_when(
       effect_to_noise_ratio >= 3 ~ "Strong signal: Formulation differences >> measurement noise",
-      effect_to_noise_ratio >= 2 ~ "Moderate signal: Formulation differences > measurement noise", 
+      effect_to_noise_ratio >= 2 ~ "Moderate signal: Formulation differences > measurement noise",
       effect_to_noise_ratio >= 1 ~ "Weak signal: Formulation differences ~ measurement noise",
       TRUE ~ "Poor signal: Formulation differences < measurement noise"
     ),
@@ -413,7 +413,7 @@ calculate_effect_noise_ratios <- function(bootstrap_results,
     cv_between_formulations = effect_magnitude / mean(bootstrap_results$w1_observed, na.rm = TRUE),
     mean_relative_uncertainty = mean(bootstrap_results$w1_sd / bootstrap_results$w1_observed, na.rm = TRUE)
   )
-  
+
   if (verbose) {
     cat("\nRESULTS:\n")
     cat(sprintf("  Effect magnitude (between-formulation SD): %.4f µm\n", effect_magnitude))
@@ -423,22 +423,429 @@ calculate_effect_noise_ratios <- function(bootstrap_results,
     cat("\nINTERPRETATION:\n")
     cat(sprintf("  %s\n", ratio_results$interpretation))
     cat("\nADDITIONAL METRICS:\n")
-    cat(sprintf("  W1 range: %.4f - %.4f µm (mean: %.4f µm)\n", 
+    cat(sprintf("  W1 range: %.4f - %.4f µm (mean: %.4f µm)\n",
                 ratio_results$min_w1_um, ratio_results$max_w1_um, ratio_results$mean_w1_um))
     cat(sprintf("  CV between formulations: %.1f%%\n", 100 * ratio_results$cv_between_formulations))
     cat(sprintf("  Mean relative uncertainty: %.1f%%\n", 100 * ratio_results$mean_relative_uncertainty))
     cat("------------------------------------------------------------------------\n")
   }
-  
+
   # Save results
   if (save_output) {
     output_path <- file.path(output_dir, output_filename)
     write_csv(ratio_results, output_path)
-    
+
     if (verbose) {
       cat("✓ Effect-to-noise ratio saved to:", output_path, "\n")
     }
   }
-  
+
   return(ratio_results)
 }
+
+# ==============================================================================
+# FUNCTION: Visualization of bootstrap results
+# ==============================================================================
+
+#' Plot Bootstrap Distributions and Confidence Intervals
+#'
+#' Creates diagnostic plots for bootstrap analysis results.
+#'
+#' @param bootstrap_results Results from bootstrap_w1_analysis()
+#' @param output_dir Directory to save plots (default: "figures")
+#' @param save_plots Should plots be saved? (default: TRUE)
+#' @param verbose Print progress (default: TRUE)
+#'
+#' @return List of ggplot objects
+#'
+plot_bootstrap_results <- function(bootstrap_results, output_dir = "figures",
+                                  save_plots = TRUE, verbose = TRUE) {
+
+  library(ggplot2)
+  library(patchwork)
+
+  if (save_plots && !dir.exists(output_dir)) {
+    dir.create(output_dir, recursive = TRUE)
+  }
+
+  # Plot 1: Confidence intervals
+  p1 <- bootstrap_results %>%
+    mutate(formulation = fct_reorder(formulation, w1_observed)) %>%
+    ggplot(aes(x = formulation)) +
+    geom_errorbar(aes(ymin = w1_ci_lower, ymax = w1_ci_upper),
+                  width = 0.3, alpha = 0.7) +
+    geom_point(aes(y = w1_observed), size = 3, color = "red") +
+    geom_point(aes(y = w1_mean), size = 2, color = "blue", alpha = 0.7) +
+    labs(
+      x = "Formulation",
+      y = "Wasserstein Distance (µm)",
+      title = "Bootstrap Confidence Intervals for W1",
+      subtitle = "Red: Observed W1, Blue: Bootstrap Mean, Bars: 95% CI"
+    ) +
+    theme_classic(base_size = 12) +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      panel.grid.major.y = element_line(color = "grey90", linewidth = 0.3)
+    )
+
+  # Plot 2: Standard errors
+  p2 <- bootstrap_results %>%
+    mutate(formulation = fct_reorder(formulation, w1_sd)) %>%
+    ggplot(aes(x = formulation, y = w1_sd)) +
+    geom_col(fill = "skyblue", alpha = 0.7) +
+    labs(
+      x = "Formulation",
+      y = "Bootstrap Standard Error (µm)",
+      title = "Measurement Uncertainty by Formulation"
+    ) +
+    theme_classic(base_size = 12) +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      panel.grid.major.y = element_line(color = "grey90", linewidth = 0.3)
+    )
+
+  # Plot 3: Relative standard error
+  p3 <- bootstrap_results %>%
+    mutate(formulation = fct_reorder(formulation, w1_relative_se)) %>%
+    ggplot(aes(x = formulation, y = 100 * w1_relative_se)) +
+    geom_col(fill = "lightcoral", alpha = 0.7) +
+    geom_hline(yintercept = c(5, 10, 20), linetype = "dashed", alpha = 0.5) +
+    labs(
+      x = "Formulation",
+      y = "Relative Standard Error (%)",
+      title = "Measurement Precision by Formulation",
+      subtitle = "Lower values indicate more precise measurements"
+    ) +
+    theme_classic(base_size = 12) +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      panel.grid.major.y = element_line(color = "grey90", linewidth = 0.3)
+    )
+
+  # Combine plots
+  combined <- (p1 / p2 / p3) +
+    plot_annotation(
+      title = "Bootstrap Analysis Summary",
+      tag_levels = 'A'
+    )
+
+  plots <- list(confidence_intervals = p1, standard_errors = p2,
+                relative_errors = p3, combined = combined)
+
+  # Save plots
+  if (save_plots) {
+    output_path <- file.path(output_dir, "bootstrap_analysis.pdf")
+    ggsave(output_path, combined, width = 12, height = 10, device = "pdf")
+
+    if (verbose) {
+      cat("✓ Bootstrap plots saved to:", output_path, "\n")
+    }
+  }
+
+  return(plots)
+}
+
+# ==============================================================================
+# FUNCTION: Effect-to-noise ratio visualization
+# ==============================================================================
+
+#' Plot Effect-to-Noise Ratios
+#'
+#' Creates visualizations showing the relationship between formulation
+#' variability and bootstrap measurement uncertainty.
+#'
+#' @param bootstrap_results Results from bootstrap_w1_analysis()
+#' @param effect_noise_results Results from calculate_effect_noise_ratios()
+#' @param output_dir Directory to save plots (default: "figures")
+#' @param save_plots Should plots be saved? (default: TRUE)
+#' @param verbose Print progress (default: TRUE)
+#'
+#' @return List of ggplot objects
+#'
+plot_effect_noise_analysis <- function(bootstrap_results, effect_noise_results,
+                                      output_dir = "figures", save_plots = TRUE,
+                                      verbose = TRUE) {
+
+  library(ggplot2)
+  library(patchwork)
+
+  if (save_plots && !dir.exists(output_dir)) {
+    dir.create(output_dir, recursive = TRUE)
+  }
+
+  # Plot 1: W1 values with uncertainty bars
+  p1 <- bootstrap_results %>%
+    mutate(formulation = fct_reorder(formulation, w1_observed)) %>%
+    ggplot(aes(x = formulation)) +
+    geom_errorbar(aes(ymin = w1_ci_lower, ymax = w1_ci_upper),
+                  width = 0.3, alpha = 0.7, color = "gray60") +
+    geom_point(aes(y = w1_observed), size = 3, color = "steelblue") +
+    labs(
+      x = "Formulation",
+      y = "Wasserstein Distance (µm)",
+      title = "W1 Values Across Formulations",
+      subtitle = "Points: Observed W1, Bars: 95% Bootstrap CI"
+    ) +
+    theme_classic(base_size = 12) +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      panel.grid.major.y = element_line(color = "grey90", linewidth = 0.3)
+    )
+
+  # Plot 2: Effect vs Noise comparison
+  effect_mag <- effect_noise_results$effect_magnitude_um
+  noise_level <- effect_noise_results$noise_level_um
+  ratio <- effect_noise_results$effect_to_noise_ratio
+
+  p2 <- tibble(
+    metric = c("Formulation\nVariability\n(Effect)", "Measurement\nUncertainty\n(Noise)"),
+    value = c(effect_mag, noise_level),
+    color = c("Effect", "Noise")
+  ) %>%
+    ggplot(aes(x = metric, y = value, fill = color)) +
+    geom_col(alpha = 0.8, width = 0.6) +
+    geom_text(aes(label = sprintf("%.4f µm", value)),
+              vjust = -0.5, size = 4, fontface = "bold") +
+    scale_fill_manual(
+      values = c("Effect" = "darkgreen", "Noise" = "orange"),
+      guide = "none"
+    ) +
+    labs(
+      x = "",
+      y = "Standard Deviation (µm)",
+      title = sprintf("Effect-to-Noise Ratio = %.2f", ratio),
+      subtitle = effect_noise_results$interpretation
+    ) +
+    theme_classic(base_size = 12) +
+    theme(
+      panel.grid.major.y = element_line(color = "grey90", linewidth = 0.3),
+      axis.text.x = element_text(size = 11)
+    )
+
+  # Plot 3: Relative uncertainty by formulation
+  p3 <- bootstrap_results %>%
+    mutate(
+      formulation = fct_reorder(formulation, w1_sd / w1_observed),
+      relative_se_pct = 100 * w1_sd / w1_observed
+    ) %>%
+    ggplot(aes(x = formulation, y = relative_se_pct)) +
+    geom_col(fill = "lightcoral", alpha = 0.7) +
+    geom_hline(yintercept = c(5, 10, 20), linetype = "dashed", alpha = 0.5) +
+    labs(
+      x = "Formulation",
+      y = "Relative Standard Error (%)",
+      title = "Measurement Precision by Formulation",
+      subtitle = "Lower values indicate more precise W1 estimates"
+    ) +
+    theme_classic(base_size = 12) +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      panel.grid.major.y = element_line(color = "grey90", linewidth = 0.3)
+    )
+
+  # Plot 4: Signal strength interpretation
+  interpretation_color <- case_when(
+    ratio >= 3 ~ "darkgreen",
+    ratio >= 2 ~ "orange",
+    ratio >= 1 ~ "gold",
+    TRUE ~ "red"
+  )
+
+  p4 <- tibble(
+    x = 1, y = 1,
+    ratio = ratio,
+    interpretation = effect_noise_results$interpretation
+  ) %>%
+    ggplot(aes(x, y)) +
+    geom_point(size = 50, color = interpretation_color, alpha = 0.8) +
+    geom_text(aes(label = sprintf("%.2f", ratio)),
+              size = 8, fontface = "bold", color = "white") +
+    labs(
+      title = "Signal Strength Assessment",
+      subtitle = str_wrap(effect_noise_results$interpretation, 40)
+    ) +
+    theme_void() +
+    theme(
+      plot.title = element_text(hjust = 0.5, face = "bold", size = 14),
+      plot.subtitle = element_text(hjust = 0.5, size = 12)
+    ) +
+    xlim(0.5, 1.5) + ylim(0.5, 1.5)
+
+  # Combine plots
+  combined <- (p1 | p2) / (p3 | p4) +
+    plot_annotation(
+      title = "Effect-to-Noise Analysis Summary",
+      tag_levels = 'A'
+    )
+
+  plots <- list(w1_values = p1, effect_vs_noise = p2,
+                precision = p3, signal_strength = p4, combined = combined)
+
+  # Save plots
+  if (save_plots) {
+    output_path <- file.path(output_dir, "effect_noise_analysis.pdf")
+    ggsave(output_path, combined, width = 16, height = 12, device = "pdf")
+
+    if (verbose) {
+      cat("✓ Effect-noise analysis plots saved to:", output_path, "\n")
+    }
+  }
+
+  return(plots)
+}
+
+
+# ==============================================================================
+# CONVENIENCE FUNCTION: Run complete bootstrap analysis
+# ==============================================================================
+
+#' Run Complete Bootstrap Analysis Pipeline
+#'
+#' Convenience wrapper that runs the full bootstrap analysis:
+#' 1. Load data
+#' 2. Perform bootstrap resampling of replicate CDFs
+#' 3. Calculate effect-to-noise ratios
+#' 4. Generate diagnostic plots
+#' 5. Save all results
+#'
+#' @param data_file Path to standardized data (default: auto-detect)
+#' @param n_bootstrap Number of bootstrap iterations (default: 2000)
+#' @param reference_module Reference condition (default: "RODOS")
+#' @param test_module Test condition (default: "INHALER")
+#' @param seed Random seed (default: 42)
+#' @param verbose Print progress (default: TRUE)
+#'
+#' @return List with all analysis results
+#'
+run_bootstrap_analysis <- function(data_file = NULL, n_bootstrap = 2000,
+                                   reference_module = "RODOS",
+                                   test_module = "INHALER",
+                                   seed = 42, verbose = TRUE) {
+
+  # Load data
+  if (is.null(data_file)) {
+    data_file <- "data/tidy/standardized_data.csv"
+  }
+
+  if (!file.exists(data_file)) {
+    stop("Data file not found: ", data_file,
+         "\nRun 01_data_import.R first to create this file.")
+  }
+
+  if (verbose) {
+    cat("Loading data from:", data_file, "\n")
+  }
+
+  data <- read_csv(data_file, show_col_types = FALSE)
+
+  # Bootstrap analysis
+  bootstrap_results <- bootstrap_w1_analysis(
+    data = data,
+    reference_module = reference_module,
+    test_module = test_module,
+    n_bootstrap = n_bootstrap,
+    seed = seed,
+    verbose = verbose
+  )
+
+  # Effect-to-noise analysis
+  effect_noise_results <- calculate_effect_noise_ratios(
+    bootstrap_results = bootstrap_results,
+    verbose = verbose
+  )
+
+  # Diagnostic plots
+  bootstrap_plots <- plot_bootstrap_results(
+    bootstrap_results = bootstrap_results,
+    verbose = verbose
+  )
+
+  # Effect-to-noise plots
+  effect_noise_plots <- plot_effect_noise_analysis(
+    bootstrap_results = bootstrap_results,
+    effect_noise_results = effect_noise_results,
+    verbose = verbose
+  )
+
+  if (verbose) {
+    cat("\n========================================================================\n")
+    cat("BOOTSTRAP ANALYSIS COMPLETE\n")
+    cat("========================================================================\n")
+    cat("Files created:\n")
+    cat("  - results/bootstrap_results.csv\n")
+    cat("  - results/effect_noise_ratios.csv\n")
+    cat("  - figures/bootstrap_analysis.pdf\n")
+    cat("  - figures/effect_noise_analysis.pdf\n")
+    cat("------------------------------------------------------------------------\n")
+    cat("Bootstrap summary:\n")
+    cat(sprintf("  %d formulations analyzed\n", nrow(bootstrap_results)))
+    cat(sprintf("  %d bootstrap samples per formulation\n", n_bootstrap))
+    cat(sprintf("  Mean measurement uncertainty: %.4f µm\n",
+                mean(bootstrap_results$w1_sd, na.rm = TRUE)))
+    cat("------------------------------------------------------------------------\n")
+    cat("Effect-to-noise summary:\n")
+    if (nrow(effect_noise_results) > 0) {
+      max_ratio <- max(effect_noise_results$effect_to_noise_ratio, na.rm = TRUE)
+      cat(sprintf("  Maximum effect-to-noise ratio: %.2f\n", max_ratio))
+      strong_effects <- sum(effect_noise_results$effect_to_noise_ratio >= 3, na.rm = TRUE)
+      cat(sprintf("  Strong effects (ratio ≥ 3): %d/%d\n",
+                  strong_effects, nrow(effect_noise_results)))
+    }
+    cat("========================================================================\n\n")
+  }
+
+  return(list(
+    bootstrap_results = bootstrap_results,
+    effect_noise_ratios = effect_noise_results,
+    bootstrap_plots = bootstrap_plots,
+    effect_noise_plots = effect_noise_plots,
+    data = data
+  ))
+}
+
+
+# ==============================================================================
+# AUTO-EXECUTION: Run analysis when script is sourced
+# ==============================================================================
+
+# Check if processed data exists
+if (file.exists("data/tidy/standardized_data.csv")) {
+
+  cat("\n========================================================================\n")
+  cat("AUTO-RUNNING BOOTSTRAP ANALYSIS\n")
+  cat("========================================================================\n")
+  cat("Reading: data/tidy/standardized_data.csv\n")
+  cat("Bootstrap iterations: 2000 per formulation\n")
+  cat("Saving to: results/bootstrap_results.csv\n")
+  cat("------------------------------------------------------------------------\n")
+
+  # Run the complete analysis
+  .bootstrap_analysis <- run_bootstrap_analysis(verbose = TRUE)
+
+  cat("\n========================================================================\n")
+  cat("BOOTSTRAP ANALYSIS COMPLETE\n")
+  cat("========================================================================\n")
+  cat("Next steps:\n")
+  cat("  - Review confidence intervals in results/bootstrap_results.csv\n")
+  cat("  - Check diagnostic plots in figures/bootstrap_analysis.pdf\n")
+  cat("  - Compare effect-to-noise ratios in results/effect_noise_ratios.csv\n")
+  cat("  - Examine device condition effects in figures/effect_noise_analysis.pdf\n")
+  cat("------------------------------------------------------------------------\n")
+  cat("To reload results later:\n")
+  cat("  source('scripts/04_bootstrap_analysis.R')\n")
+  cat("  bootstrap_results <- read_csv('results/bootstrap_results.csv')\n")
+  cat("  effect_noise_ratios <- read_csv('results/effect_noise_ratios.csv')\n")
+  cat("========================================================================\n\n")
+
+} else {
+  cat("\n========================================================================\n")
+  cat("BOOTSTRAP ANALYSIS - WAITING FOR INPUT DATA\n")
+  cat("========================================================================\n")
+  cat("Standardized data not found: data/tidy/standardized_data.csv\n")
+  cat("\nPlease run the data processing pipeline first:\n")
+  cat("  source('scripts/01_data_import.R')\n")
+  cat("  source('scripts/02_wasserstein_core.R')\n")
+  cat("  source('scripts/04_bootstrap_analysis.R')\n")
+  cat("========================================================================\n\n")
+}
+
