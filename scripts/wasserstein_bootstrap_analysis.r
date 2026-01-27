@@ -246,3 +246,110 @@ bootstrap_w1_single <- function(data, formulation, reference_module = "RODOS",
     bootstrap_samples = list(w1_bootstrap)
   )
 }
+ ==============================================================================
+# MAIN FUNCTION: Bootstrap analysis for all formulations
+# ==============================================================================
+
+#' Bootstrap Wasserstein Analysis for All Formulations
+#'
+#' Performs bootstrap resampling analysis for all formulations in dataset by
+#' resampling replicate CDFs with replacement, pooling, and calculating W1.
+#'
+#' @param data Standardized data from read_ld_data_from_structure()
+#' @param reference_module Reference condition (default: "RODOS")
+#' @param test_module Test condition (default: "INHALER")
+#' @param n_bootstrap Number of bootstrap iterations per formulation (default: 2000)
+#' @param output_dir Directory to save results (default: "results")
+#' @param save_output Should results be saved? (default: TRUE)
+#' @param output_filename Output filename (default: "bootstrap_results.csv")
+#' @param seed Random seed for reproducibility
+#' @param verbose Print progress messages (default: TRUE)
+#'
+#' @return Tibble with bootstrap results for all formulations
+#'
+bootstrap_w1_analysis <- function(data, reference_module = "RODOS",
+                                 test_module = "INHALER", n_bootstrap = 2000,
+                                 output_dir = "results", save_output = TRUE,
+                                 output_filename = "bootstrap_results.csv",
+                                 seed = 42, verbose = TRUE) {
+
+  # Create output directory if needed
+  if (save_output && !dir.exists(output_dir)) {
+    dir.create(output_dir, recursive = TRUE)
+    if (verbose) cat("Created output directory:", output_dir, "\n")
+  }
+
+  if (verbose) {
+    cat("\n========================================================================\n")
+    cat("BOOTSTRAP WASSERSTEIN ANALYSIS\n")
+    cat("========================================================================\n")
+    cat("Bootstrap iterations:", n_bootstrap, "\n")
+    cat("Method: Resample replicate CDFs → Pool → Calculate W1\n")
+    cat("Reference condition:", reference_module, "\n")
+    cat("Test condition:", test_module, "\n")
+    if (save_output) {
+      cat("Output file:", file.path(output_dir, output_filename), "\n")
+    }
+    cat("------------------------------------------------------------------------\n\n")
+  }
+
+  # Get unique formulations
+  formulations <- unique(data$formulation)
+  n_formulations <- length(formulations)
+
+  if (verbose) {
+    cat("Formulations to process:", n_formulations, "\n")
+    cat("Total bootstrap samples:", n_formulations * n_bootstrap, "\n\n")
+  }
+
+  # Run bootstrap analysis for each formulation
+  bootstrap_results <- map_dfr(formulations, function(form) {
+    bootstrap_w1_single(
+      data = data,
+      formulation = form,
+      reference_module = reference_module,
+      test_module = test_module,
+      n_bootstrap = n_bootstrap,
+      seed = seed,
+      verbose = verbose
+    )
+  })
+
+  # Add coefficient of variation and other metrics
+  bootstrap_results <- bootstrap_results %>%
+    mutate(
+      w1_cv = w1_sd / w1_mean,  # Coefficient of variation
+      w1_ci_width = w1_ci_upper - w1_ci_lower,  # CI width
+      w1_relative_se = w1_sd / w1_observed  # Relative standard error
+    )
+
+  if (verbose) {
+    cat("\n------------------------------------------------------------------------\n")
+    cat("BOOTSTRAP SUMMARY:\n")
+    cat(sprintf("  Mean W1: %.4f ± %.4f µm\n",
+                mean(bootstrap_results$w1_mean, na.rm = TRUE),
+                sd(bootstrap_results$w1_mean, na.rm = TRUE)))
+    cat(sprintf("  Mean SE: %.4f µm (%.1f%% CV)\n",
+                mean(bootstrap_results$w1_sd, na.rm = TRUE),
+                100 * mean(bootstrap_results$w1_cv, na.rm = TRUE)))
+    cat(sprintf("  Mean CI width: %.4f µm\n",
+                mean(bootstrap_results$w1_ci_width, na.rm = TRUE)))
+    cat("------------------------------------------------------------------------\n")
+  }
+
+  # Save results
+  if (save_output) {
+    # Save main results (without bootstrap samples to keep file size reasonable)
+    bootstrap_summary <- bootstrap_results %>%
+      select(-bootstrap_samples)
+
+    output_path <- file.path(output_dir, output_filename)
+    write_csv(bootstrap_summary, output_path)
+
+    if (verbose) {
+      cat("✓ Bootstrap results saved to:", output_path, "\n")
+    }
+  }
+
+  return(bootstrap_results)
+}
