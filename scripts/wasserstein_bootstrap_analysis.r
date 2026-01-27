@@ -353,3 +353,92 @@ bootstrap_w1_analysis <- function(data, reference_module = "RODOS",
 
   return(bootstrap_results)
 }
+ ==============================================================================
+# FUNCTION: Calculate effect-to-noise ratios
+# ==============================================================================
+
+#' Calculate Overall Effect-to-Noise Ratio
+#'
+#' Compares the overall variability of W1 values across all formulations
+#' to the average bootstrap-estimated measurement uncertainty. Higher ratios 
+#' indicate that formulation differences exceed measurement variability.
+#'
+#' @param bootstrap_results Results from bootstrap_w1_analysis()
+#' @param output_dir Directory to save results (default: "results")
+#' @param save_output Should results be saved? (default: TRUE) 
+#' @param output_filename Output filename (default: "effect_noise_ratios.csv")
+#' @param verbose Print progress (default: TRUE)
+#'
+#' @return Tibble with effect-to-noise ratio
+#'
+calculate_effect_noise_ratios <- function(bootstrap_results, 
+                                         output_dir = "results",
+                                         save_output = TRUE,
+                                         output_filename = "effect_noise_ratios.csv",
+                                         verbose = TRUE) {
+  
+  if (verbose) {
+    cat("\n========================================================================\n")
+    cat("EFFECT-TO-NOISE RATIO ANALYSIS\n")
+    cat("========================================================================\n")
+    cat("Analysis: Overall formulation variability vs measurement uncertainty\n")
+  }
+  
+  # Calculate effect magnitude (between-formulation variability)
+  effect_magnitude <- sd(bootstrap_results$w1_observed, na.rm = TRUE)
+  
+  # Calculate noise level (average measurement uncertainty)
+  noise_level <- mean(bootstrap_results$w1_sd, na.rm = TRUE)
+  
+  # Calculate ratio
+  effect_to_noise_ratio <- effect_magnitude / noise_level
+  
+  # Create results
+  ratio_results <- tibble(
+    analysis_type = "overall_formulation_variability",
+    effect_magnitude_um = effect_magnitude,
+    noise_level_um = noise_level,
+    effect_to_noise_ratio = effect_to_noise_ratio,
+    n_formulations = nrow(bootstrap_results),
+    interpretation = case_when(
+      effect_to_noise_ratio >= 3 ~ "Strong signal: Formulation differences >> measurement noise",
+      effect_to_noise_ratio >= 2 ~ "Moderate signal: Formulation differences > measurement noise", 
+      effect_to_noise_ratio >= 1 ~ "Weak signal: Formulation differences ~ measurement noise",
+      TRUE ~ "Poor signal: Formulation differences < measurement noise"
+    ),
+    # Additional metrics
+    mean_w1_um = mean(bootstrap_results$w1_observed, na.rm = TRUE),
+    min_w1_um = min(bootstrap_results$w1_observed, na.rm = TRUE),
+    max_w1_um = max(bootstrap_results$w1_observed, na.rm = TRUE),
+    cv_between_formulations = effect_magnitude / mean(bootstrap_results$w1_observed, na.rm = TRUE),
+    mean_relative_uncertainty = mean(bootstrap_results$w1_sd / bootstrap_results$w1_observed, na.rm = TRUE)
+  )
+  
+  if (verbose) {
+    cat("\nRESULTS:\n")
+    cat(sprintf("  Effect magnitude (between-formulation SD): %.4f µm\n", effect_magnitude))
+    cat(sprintf("  Noise level (mean bootstrap SE): %.4f µm\n", noise_level))
+    cat(sprintf("  Effect-to-noise ratio: %.2f\n", effect_to_noise_ratio))
+    cat(sprintf("  Number of formulations: %d\n", nrow(bootstrap_results)))
+    cat("\nINTERPRETATION:\n")
+    cat(sprintf("  %s\n", ratio_results$interpretation))
+    cat("\nADDITIONAL METRICS:\n")
+    cat(sprintf("  W1 range: %.4f - %.4f µm (mean: %.4f µm)\n", 
+                ratio_results$min_w1_um, ratio_results$max_w1_um, ratio_results$mean_w1_um))
+    cat(sprintf("  CV between formulations: %.1f%%\n", 100 * ratio_results$cv_between_formulations))
+    cat(sprintf("  Mean relative uncertainty: %.1f%%\n", 100 * ratio_results$mean_relative_uncertainty))
+    cat("------------------------------------------------------------------------\n")
+  }
+  
+  # Save results
+  if (save_output) {
+    output_path <- file.path(output_dir, output_filename)
+    write_csv(ratio_results, output_path)
+    
+    if (verbose) {
+      cat("✓ Effect-to-noise ratio saved to:", output_path, "\n")
+    }
+  }
+  
+  return(ratio_results)
+}
