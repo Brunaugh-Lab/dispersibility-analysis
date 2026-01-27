@@ -246,7 +246,8 @@ bootstrap_w1_single <- function(data, formulation, reference_module = "RODOS",
     bootstrap_samples = list(w1_bootstrap)
   )
 }
- ==============================================================================
+
+# ==============================================================================
 # MAIN FUNCTION: Bootstrap analysis for all formulations
 # ==============================================================================
 
