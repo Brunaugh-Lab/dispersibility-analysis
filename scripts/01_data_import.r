@@ -161,12 +161,17 @@ if (length(inhaler_files) > 0) {
     headers <- read_csv(file, n_max = 1, col_names = FALSE, show_col_types = FALSE)
     values <- read_csv(file, skip = 1, n_max = 1, col_names = FALSE, show_col_types = FALSE)
 
-    # Combine headers and values
-    metadata_row <- as.list(values)
-    names(metadata_row) <- as.character(headers[1,])
+    # Ensure both have same number of columns
+    min_cols <- min(ncol(headers), ncol(values))
+  headers <- headers[, 1:min_cols]
+  values <- values[, 1:min_cols]
 
-    metadata_row$source_file <- file
-    return(as_tibble(metadata_row))
+  # Combine headers and values
+  metadata_row <- as.list(values)
+  names(metadata_row) <- as.character(headers[1,])
+
+  metadata_row$source_file <- file
+  return(as_tibble(metadata_row))
   })
 
   # Read data portion (skip metadata rows) for INHALER files
