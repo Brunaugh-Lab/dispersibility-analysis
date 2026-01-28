@@ -630,12 +630,12 @@ if (tidy_data_exists && results_exist) {
   cat("========================================================================\n")
 
   if (!tidy_data_exists) {
-    cat("✗ Tidy data not found: data/tidy/standardized_data.csv\n")
+    cat("✗ Tidy data not found: data_v2/tidy/standardized_data_with_conditions.csv\n")
     cat("  Run: source('scripts/01_data_import.R')\n\n")
   }
 
   if (!results_exist) {
-    cat("✗ Results not found: results/wasserstein_results.csv\n")
+    cat("✗ Results not found: results_v2/wasserstein_results.csv\n")
     cat("  Run: source('scripts/02_wasserstein_core.R')\n\n")
   }
 
