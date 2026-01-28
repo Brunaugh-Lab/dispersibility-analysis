@@ -41,13 +41,14 @@ library(janitor)
 # CORE FUNCTION: Read and standardize laser diffraction data
 # ==============================================================================
 
-#' Read Laser Diffraction CSV Files with Metadata from Directory Structure
+#' Read Laser Diffraction CSV Files with Enhanced Metadata Support
 #'
-#' By default, the entire folder name becomes the formulation ID. This works for
-#' any naming scheme - simple ("FormA"), numbered ("Run2"), or complex ("231067_IMT").
+#' Supports two data structures:
+#' 1. RODOS: Formulation folders with replicate CSVs (existing structure)
+#' 2. INHALER: Flat folder with metadata inside each CSV file
 #'
-#' @param data_directory Path to directory containing subdirectories organized
-#'   by formulation and dispersion module (e.g., "data/", "./raw_data/")
+#' @param data_directory Path to directory containing RODOS and INHALER subdirectories
+#'   (e.g., "data_v2/")
 #' @param formulation_pattern Regex pattern to extract formulation ID from
 #'   folder name. Default: ".*" (uses entire folder name - RECOMMENDED)
 #'   Only customize if you need to extract a portion:
