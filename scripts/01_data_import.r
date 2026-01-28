@@ -2,32 +2,39 @@
 # 01_data_import.R
 # Data Import and Standardization for Laser Diffraction Dispersibility Analysis
 #
-# Purpose: Flexible reading of Sympatec PAQXOS CSV exports with metadata
-#          extraction from directory structure. Automatically saves cleaned
-#          data for downstream analysis.
+# Purpose: Enhanced reading of Sympatec PAQXOS CSV exports with support for
+#          device operating conditions (resistance/pressure) and metadata
+#          extraction from both directory structure and CSV headers.
 #
 # Auto-execution: Script automatically runs when sourced
-#   - Reads all CSV files from data/ directory
-#   - Saves to processed/standardized_data.csv
-#   - Folder name becomes formulation ID
+#   - Reads all CSV files from data_v2/ directory
+#   - Extracts device conditions from INHALER CSV metadata
+#   - Assigns replicates by timestamp for INHALER files
+#   - Saves to data_v2/tidy/standardized_data_with_conditions.csv
 #
-# Expected Directory Structure:
-#   data/
-#   ├── FormulationA/          ← Folder name = Formulation ID
-#   │   ├── inhaler/  (or INHALER)
+# Enhanced Directory Structure:
+#   data_v2/
+#   ├── RODOS/                 ← Reference measurements
+#   │   ├── FormulationA/      ← Folder name = Formulation ID
 #   │   │   ├── rep1.csv
 #   │   │   ├── rep2.csv
 #   │   │   └── rep3.csv
-#   │   └── rodos/    (or RODOS)
-#   │       ├── rep1.csv
+#   │   ├── FormulationB/
+#   │   │   ├── rep1.csv
+#   │   │   ├── rep2.csv
+#   │   │   └── rep3.csv
+#   │   └── FormulationC/
 #   │       └── ...
-#   └── FormulationB/
-#       └── ...
+#   └── INHALER/               ← Test measurements with device conditions
+#       ├── file1.csv          ← Contains metadata: formulation_id, Device, pressure_drop, Time
+#       ├── file2.csv          ← Device: RS01-M7-low/medium/high (flexible)
+#       ├── file3.csv          ← Pressure: 1_kPa, 2_kPa, 4_kPa (flexible)
+#       └── ...fileN.csv       ← Any number of files with various condition combinations
 #
 # Output Structure (auto-created):
-#   data/
+#   data_v2/
 #   └── tidy/
-#       └── standardized_data.csv
+#       └── standardized_data_with_conditions.csv
 #
 # Usage:
 #   source("scripts/01_data_import.R")  # That's it!
