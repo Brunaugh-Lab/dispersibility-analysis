@@ -577,7 +577,7 @@ run_wasserstein_analysis <- function(
 ) {
 
   # Load processed data
-  data_file <- file.path(processed_dir, "standardized_data.csv")
+  data_file <- file.path(processed_dir, "standardized_data_with_conditions.csv")
 
   if (!file.exists(data_file)) {
     stop("Processed data not found: ", data_file,
