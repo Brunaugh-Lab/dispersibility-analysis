@@ -345,8 +345,9 @@ validate_ld_data <- function(data, check_replicates = TRUE, min_replicates = 3) 
 
   # Check for NA values in key columns
   na_counts <- data %>%
-    summarise(across(c(particle_size_um, q3_percent, formulation, module, replicate),
-                     ~sum(is.na(.))))
+  summarise(across(c(particle_size_um, q3_percent, formulation, module,
+                     device_resistance, pressure_drop_clean, replicate),
+                   ~sum(is.na(.))))
 
   if (any(na_counts > 0)) {
     cat("\nWARNING: NA values detected:\n")
