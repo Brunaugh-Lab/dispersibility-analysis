@@ -240,47 +240,82 @@ calculate_pairwise_wasserstein <- function(
   for (form in formulations) {
 
     if (verbose) {
-      cat("Processing:", form, "... ")
+      cat("\nProcessing formulation:", form, "\n")
     }
 
-    # Pool replicates for reference condition
+    # Pool replicates for reference condition (ONCE per formulation)
     ref_pooled <- pool_replicate_cdfs(data, form, reference_module)
 
-    # Pool replicates for test condition
-    test_pooled <- pool_replicate_cdfs(data, form, test_module)
-
-    # Check that we have data
-    if (nrow(ref_pooled) == 0 || nrow(test_pooled) == 0) {
+    # Check that we have reference data
+    if (nrow(ref_pooled) == 0) {
       if (verbose) {
-        cat("FAILED (no data)\n")
+        cat("  FAILED (no reference data)\n")
       }
-      warning(paste("No data found for", form))
+      warning(paste("No reference data found for", form))
       next
     }
 
-    # Calculate W1 distance
-    w1 <- calculate_wasserstein_1d(
-      size_grid = ref_pooled$particle_size_um,
-      cdf_test = test_pooled$q3_cdf_mean,
-      cdf_ref = ref_pooled$q3_cdf_mean
-    )
+    # Get all device-pressure combinations for this formulation
+    device_pressure_combos <- data %>%
+      filter(formulation == !!form, module == !!test_module) %>%
+      distinct(device_resistance, pressure_drop_clean)
 
-    # Calculate d50 values for normalization
-    d50_ref <- calculate_d50(ref_pooled$particle_size_um, ref_pooled$q3_cdf_mean)
-    d50_test <- calculate_d50(test_pooled$particle_size_um, test_pooled$q3_cdf_mean)
+    if (nrow(device_pressure_combos) == 0) {
+      if (verbose) {
+        cat("  FAILED (no test data)\n")
+      }
+      warning(paste("No test data found for", form))
+      next
+    }
 
-    # Store results
-    results_list[[length(results_list) + 1]] <- tibble(
-      formulation = form,
-      W1_micrometers = w1,
-      d50_reference_um = d50_ref,
-      d50_test_um = d50_test,
-      W1_normalized = w1 / d50_ref,
-      d50_shift_um = d50_test - d50_ref
-    )
+    # Loop through each device-pressure combination
+    for (i in 1:nrow(device_pressure_combos)) {
+      dev <- device_pressure_combos$device_resistance[i]
+      press <- device_pressure_combos$pressure_drop_clean[i]
 
-    if (verbose) {
-      cat(sprintf("W1 = %.4f µm, W1/d50 = %.4f\n", w1, w1 / d50_ref))
+      if (verbose) {
+        cat(sprintf("  %s @ %s ... ", dev, press))
+      }
+
+      # Pool replicates for THIS specific test condition
+      test_pooled <- pool_replicate_cdfs(data, form, test_module,
+                                         device_resistance = dev,
+                                         pressure_drop = press)
+
+      # Check that we have test data
+      if (nrow(test_pooled) == 0) {
+        if (verbose) {
+          cat("FAILED (no data)\n")
+        }
+        next
+      }
+
+      # Calculate W1 distance
+      w1 <- calculate_wasserstein_1d(
+        size_grid = ref_pooled$particle_size_um,
+        cdf_test = test_pooled$q3_cdf_mean,
+        cdf_ref = ref_pooled$q3_cdf_mean
+      )
+
+      # Calculate d50 values for normalization
+      d50_ref <- calculate_d50(ref_pooled$particle_size_um, ref_pooled$q3_cdf_mean)
+      d50_test <- calculate_d50(test_pooled$particle_size_um, test_pooled$q3_cdf_mean)
+
+      # Store results with device/pressure info
+      results_list[[length(results_list) + 1]] <- tibble(
+        formulation = form,
+        device_resistance = dev,
+        pressure_drop = press,
+        W1_micrometers = w1,
+        d50_reference_um = d50_ref,
+        d50_test_um = d50_test,
+        W1_normalized = w1 / d50_ref,
+        d50_shift_um = d50_test - d50_ref
+      )
+
+      if (verbose) {
+        cat(sprintf("W1 = %.4f µm\n", w1))
+      }
     }
   }
 
