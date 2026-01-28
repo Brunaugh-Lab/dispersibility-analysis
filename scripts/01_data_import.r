@@ -508,20 +508,20 @@ run_data_import <- function(
 # ==============================================================================
 
 # Check if data directory exists
-if (dir.exists("data")) {
+if (dir.exists("data_v2")) {
 
   cat("\n========================================================================\n")
   cat("AUTO-RUNNING DATA IMPORT\n")
   cat("========================================================================\n")
-  cat("Reading from: data/\n")
+  cat("Reading from: data_v2/\n")
   cat("Saving to: data_v2/tidy/standardized_data_with_conditions.csv\n")
   cat("------------------------------------------------------------------------\n")
 
   # Run the import with defaults
-  .standardized_data <- run_data_import(verbose = TRUE)
+  .standardized_data <- run_data_import("data_v2", verbose = TRUE)
 
   cat("\n========================================================================\n")
-  cat("IMPORT COMPLETE - Data saved to data/tidy/standardized_data.csv\n")
+  cat("IMPORT COMPLETE - Data saved to data_v2/tidy/standardized_data_with_conditions.csv\n")
   cat("========================================================================\n")
   cat("Next step: Run Wasserstein analysis\n")
   cat("  source('scripts/02_wasserstein_core.R')\n")
