@@ -588,21 +588,21 @@ generate_all_plots <- function(
 # AUTO-EXECUTION: Generate plots when script is sourced
 # ==============================================================================
 
-tidy_data_exists <- file.exists("data/tidy/standardized_data.csv")
-results_exist <- file.exists("results/wasserstein_results.csv")
+tidy_data_exists <- file.exists("data_v2/tidy/standardized_data_with_conditions.csv")
+results_exist <- file.exists("results_v2/wasserstein_results.csv")
 
 if (tidy_data_exists && results_exist) {
 
   cat("\n========================================================================\n")
   cat("AUTO-RUNNING VISUALIZATION\n")
   cat("========================================================================\n")
-  cat("Reading: data/tidy/standardized_data.csv\n")
-  cat("Reading: results/wasserstein_results.csv\n")
-  cat("Saving to: figures/\n")
+  cat("Reading: data_v2/tidy/standardized_data_with_conditions.csv\n")
+  cat("Reading: results_v2/wasserstein_results.csv\n")
+  cat("Saving to: figures_v2/\n")
   cat("------------------------------------------------------------------------\n")
 
-  .viz_data <- read_csv("data/tidy/standardized_data.csv", show_col_types = FALSE)
-  .viz_results <- read_csv("results/wasserstein_results.csv", show_col_types = FALSE)
+  .viz_data <- read_csv("data_v2/tidy/standardized_data_with_conditions.csv", show_col_types = FALSE)
+  .viz_results <- read_csv("results_v2/wasserstein_results.csv", show_col_types = FALSE)
 
   .viz_plots <- generate_all_plots(
     data = .viz_data,
