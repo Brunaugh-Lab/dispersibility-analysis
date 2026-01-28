@@ -269,6 +269,12 @@ if (any(is.na(combined_data$pressure_drop_clean))) {
     cat("\nReplicates found:", n_distinct(combined_data$replicate), "\n")
     print(unique(combined_data$replicate))
 
+    cat("\nDevice resistances found:", n_distinct(combined_data$device_resistance), "\n")
+    print(unique(combined_data$device_resistance))
+
+    cat("\nPressure drops found:", n_distinct(combined_data$pressure_drop_clean), "\n")
+    print(unique(combined_data$pressure_drop_clean))
+
     cat("\nFiles per formulation-module combination:\n")
     print(
       combined_data %>%
@@ -326,7 +332,8 @@ validate_ld_data <- function(data, check_replicates = TRUE, min_replicates = 3) 
 
   # Check required columns
   required_cols <- c("particle_size_um", "q3_percent", "q3_cdf",
-                     "formulation", "module", "replicate", "source_file")
+                     "formulation", "module", "device_resistance",
+                     "pressure_drop_clean", "replicate", "source_file")
   missing_cols <- setdiff(required_cols, names(data))
 
   if (length(missing_cols) > 0) {
