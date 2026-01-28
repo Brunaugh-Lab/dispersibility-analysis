@@ -7,8 +7,8 @@
 #          data and generates figures.
 #
 # Auto-execution: Script automatically runs when sourced
-#   - Reads data/tidy/standardized_data.csv (from script 01)
-#   - Reads results/wasserstein_results.csv (from script 02)
+#   - Reads data_v2/tidy/standardized_data.csv (from script 01)
+#   - Reads results_v2/wasserstein_results.csv (from script 02)
 #   - Generates figures and saves to figures/
 #     * One PDF per formulation (RODOS vs INHALER comparison)
 #     * One overlay PDF (all INHALER distributions)
@@ -20,8 +20,8 @@
 #   - plot_psd_density() - Density distributions
 #
 # Input:
-#   - data/tidy/standardized_data.csv
-#   - results/wasserstein_results.csv
+#   - data_v2/tidy/standardized_data.csv
+#   - results_v2/wasserstein_results.csv
 # Output: figures/*.pdf and figures/*.png
 #
 # Designed for: Single test condition vs reference (e.g., INHALER vs RODOS)
@@ -46,7 +46,7 @@ plot_individual_formulation_pdfs <- function(
     test_module = "INHALER",
     formulations = NULL,
     color_palette = c("RODOS" = "#E31A1C", "INHALER" = "#1F78B4"),
-    output_dir = "figures",
+    output_dir = "figures_v2",
     width = 8,
     height = 6,
     verbose = TRUE
@@ -142,7 +142,7 @@ plot_all_inhaler_overlay <- function(
     data,
     test_module = "INHALER",
     formulations = NULL,
-    output_dir = "figures",
+    output_dir = "figures_v2",
     filename = "all_inhaler_overlay.pdf",
     width = 10,
     height = 6,
@@ -312,7 +312,7 @@ plot_w1_bars <- function(
     bar_color = "#1F78B4",
     show_values = TRUE,
     save_plot = FALSE,
-    output_dir = "figures",
+    output_dir = "figures_v2",
     filename = "w1_ranking.pdf",  # <-- CHANGED default to PDF
     width = 10,
     height = 6,
@@ -401,7 +401,7 @@ plot_d50_comparison <- function(
     reference_color = "#E31A1C",
     test_color = "#1F78B4",
     save_plot = FALSE,
-    output_dir = "figures",
+    output_dir = "figures_v2",
     filename = "d50_comparison.png",
     width = 10,
     height = 6,
@@ -477,7 +477,7 @@ create_publication_panel <- function(
     reference_module = "RODOS",
     test_module = "INHALER",
     save_plot = FALSE,
-    output_dir = "figures",
+    output_dir = "figures_v2",
     filename = "dispersibility_panel.png",
     width = 16,
     height = 12,
@@ -523,7 +523,7 @@ create_publication_panel <- function(
 generate_all_plots <- function(
     data,
     w1_results,
-    output_dir = "figures",
+    output_dir = "figures_v2",
     reference_module = "RODOS",
     test_module = "INHALER",
     verbose = TRUE
