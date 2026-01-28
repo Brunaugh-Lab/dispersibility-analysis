@@ -258,9 +258,9 @@ combined_data <- combined_data %>%
 
     # Extract timestamp for INHALER files
     measurement_time = case_when(
-      is_inhaler ~ time,  # Use the 'time' column from CSV
-      TRUE ~ NA_character_
-    ),
+    is_inhaler ~ Time,  # Use the 'Time' column from CSV (capital T)
+    TRUE ~ NA_character_
+  ),
 
     # Extract replicate from filename for RODOS only
     filename = basename(source_file),
