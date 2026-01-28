@@ -523,7 +523,7 @@ plot_w1_bars <- function(
     labs(
       x = "Formulation",
       y = y_label,
-      title = "Dispersibility Ranking by Device × Pressure",
+      title = "Dispersibility Ranking by Device Resistance × Pressure Drop",
       subtitle = sprintf("Lower W₁ = Better dispersibility (%d×%d conditions)",
                         n_devices, n_pressures)
     ) +
