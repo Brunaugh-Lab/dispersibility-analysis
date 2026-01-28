@@ -161,35 +161,79 @@ read_ld_data_from_structure <- function(
     ) %>%
     filter(!is.na(particle_size_um))
 
-  # Extract metadata from directory structure
-  combined_data <- combined_data %>%
-    mutate(
-      # Extract formulation from parent directory name
-      # Path structure: .../FormulationFolder/module/file.csv
-      formulation_folder = basename(dirname(dirname(source_file))),
-      formulation = str_extract(formulation_folder, formulation_pattern),
+  # Extract metadata with enhanced support for INHALER files
+combined_data <- combined_data %>%
+  mutate(
+    # Determine if this is INHALER or RODOS based on path
+    module_folder = basename(dirname(source_file)),
+    is_inhaler = tolower(module_folder) == "inhaler",
 
-      # Extract module from immediate parent directory
-      module_folder = basename(dirname(source_file)),
-      module = case_when(
-        tolower(module_folder) == "inhaler" ~ "INHALER",
-        tolower(module_folder) == "rodos" ~ "RODOS",
-        TRUE ~ toupper(module_folder)  # Standardize to uppercase
-      ),
+    # Extract metadata differently for INHALER vs RODOS
+    formulation = case_when(
+      # INHALER: Extract from formulation_id column in CSV
+      is_inhaler ~ formulation_id,
+      # RODOS: Extract from folder structure (existing logic)
+      TRUE ~ str_extract(basename(dirname(dirname(source_file))), formulation_pattern)
+    ),
 
-      # Extract replicate from filename
-      filename = basename(source_file),
-      replicate = str_extract(filename, replicate_pattern)
-    ) %>%
-    select(
-      particle_size_um,
-      q3_percent,
-      q3_cdf,
-      formulation,
-      module,
-      replicate,
-      source_file
+    module = case_when(
+      is_inhaler ~ "INHALER",
+      tolower(module_folder) == "rodos" ~ "RODOS",
+      TRUE ~ toupper(module_folder)
+    ),
+
+    # Extract device information for INHALER files
+    device_resistance = case_when(
+      is_inhaler & str_detect(device, "(?i)low") ~ "low",
+      is_inhaler & str_detect(device, "(?i)medium") ~ "medium",
+      is_inhaler & str_detect(device, "(?i)high") ~ "high",
+      !is_inhaler ~ "reference",  # RODOS is reference
+      TRUE ~ "unknown"
+    ),
+
+    pressure_drop_clean = case_when(
+      is_inhaler ~ str_extract(pressure_drop, "\\d+"),  # Extract just the number
+      !is_inhaler ~ "reference",  # RODOS is reference
+      TRUE ~ "unknown"
+    ),
+
+    # Extract timestamp for INHALER files
+    measurement_time = case_when(
+      is_inhaler ~ time,  # Use the 'time' column from CSV
+      TRUE ~ NA_character_
+    ),
+
+    # Extract replicate from filename for RODOS only
+    filename = basename(source_file),
+    replicate = case_when(
+      # RODOS: Extract from filename using pattern (existing logic)
+      !is_inhaler ~ str_extract(filename, replicate_pattern),
+      # INHALER: Will be assigned by timestamp in next step
+      TRUE ~ NA_character_
     )
+  ) %>%
+  # Auto-assign replicate numbers for INHALER files based on timestamps
+  group_by(formulation, module, device_resistance, pressure_drop_clean) %>%
+  arrange(measurement_time) %>%  # Sort by timestamp within each condition
+  mutate(
+    replicate = case_when(
+      is_inhaler ~ paste0("rep", row_number()),  # rep1, rep2, rep3 by time order
+      TRUE ~ replicate
+    )
+  ) %>%
+  ungroup() %>%
+  select(
+    particle_size_um,
+    q3_percent,
+    q3_cdf,
+    formulation,
+    module,
+    device_resistance,
+    pressure_drop_clean,
+    replicate,
+    measurement_time,
+    source_file
+  )
 
   # Standardize replicate names to lowercase automatically
   combined_data <- combined_data %>%
