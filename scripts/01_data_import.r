@@ -185,6 +185,15 @@ if (length(inhaler_files) > 0) {
 } else {
   inhaler_combined <- tibble()
 }
+# Join metadata with data
+inhaler_combined <- inhaler_data %>%
+  left_join(inhaler_metadata, by = "source_file")
+
+# DEBUG: Check column names after joining
+if (verbose && nrow(inhaler_combined) > 0) {
+  cat("DEBUG: INHALER columns after joining:\n")
+  cat(paste(names(inhaler_combined), collapse = ", "), "\n\n")
+}
 
 # Read RODOS files normally (no metadata in CSV)
 if (length(rodos_files) > 0) {
