@@ -47,13 +47,28 @@ library(tidyverse)
 #'   - q3_cdf_sd: Standard deviation across replicates
 #'   - n_replicates: Number of replicates pooled
 #'
-pool_replicate_cdfs <- function(data, formulation, module) {
+pool_replicate_cdfs <- function(data, formulation, module, device_resistance = NULL, pressure_drop = NULL) {
 
+  # Start with base filter
   pooled_cdf <- data %>%
     filter(
       formulation == !!formulation,
       module == !!module
-    ) %>%
+    )
+
+  # Add device/pressure filters ONLY for INHALER data
+  if (!is.null(device_resistance)) {
+    pooled_cdf <- pooled_cdf %>%
+      filter(device_resistance == !!device_resistance)
+  }
+
+  if (!is.null(pressure_drop)) {
+    pooled_cdf <- pooled_cdf %>%
+      filter(pressure_drop_clean == !!pressure_drop)
+  }
+
+  # Pool replicates
+  pooled_cdf <- pooled_cdf %>%
     group_by(particle_size_um) %>%
     summarise(
       q3_cdf_mean = mean(q3_cdf, na.rm = TRUE),
