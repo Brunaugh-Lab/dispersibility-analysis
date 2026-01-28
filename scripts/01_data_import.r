@@ -279,13 +279,13 @@ combined_data <- combined_data %>%
   ) %>%
   # Auto-assign replicate numbers for INHALER files based on timestamps
   group_by(formulation, module, device_resistance, pressure_drop_clean) %>%
-  arrange(measurement_time) %>%  # Sort by timestamp within each condition
+  arrange(measurement_time) %>%
   mutate(
     replicate = case_when(
-      is_inhaler ~ paste0("rep", row_number()),  # rep1, rep2, rep3 by time order
-      TRUE ~ replicate
-    )
-  ) %>%
+    is_inhaler ~ paste0("rep", dense_rank(source_file)),  # This counts unique files!
+    TRUE ~ replicate
+  )
+) %>%
   ungroup() %>%
   select(
     particle_size_um,
