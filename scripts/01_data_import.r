@@ -235,20 +235,27 @@ combined_data <- combined_data %>%
     source_file
   )
 
-  # Standardize replicate names to lowercase automatically
-  combined_data <- combined_data %>%
-    mutate(replicate = tolower(replicate))
+# Standardize replicate names to lowercase automatically
+combined_data <- combined_data %>%
+  mutate(replicate = tolower(replicate))
 
-  # Validate extraction
-  if (any(is.na(combined_data$formulation))) {
-    warning("Some files have NA formulation - check formulation_pattern")
-  }
-  if (any(is.na(combined_data$module))) {
-    warning("Some files have NA module - check directory structure")
-  }
-  if (any(is.na(combined_data$replicate))) {
-    warning("Some files have NA replicate - check replicate_pattern")
-  }
+# Validate extraction
+if (any(is.na(combined_data$formulation))) {
+  warning("Some files have NA formulation - check formulation_pattern or formulation_id column")
+}
+if (any(is.na(combined_data$module))) {
+  warning("Some files have NA module - check directory structure")
+}
+if (any(is.na(combined_data$replicate))) {
+  warning("Some files have NA replicate - check replicate_pattern or timestamp assignment")
+}
+if (any(is.na(combined_data$device_resistance))) {
+  warning("Some INHALER files have NA device_resistance - check Device column")
+}
+if (any(is.na(combined_data$pressure_drop_clean))) {
+  warning("Some INHALER files have NA pressure_drop - check pressure_drop column")
+}
+
 
   # Print summary
   if (verbose) {
