@@ -258,7 +258,7 @@ combined_data <- combined_data %>%
 
     # Extract timestamp for INHALER files
     measurement_time = case_when(
-    is_inhaler ~ Time,  # Use the 'Time' column from CSV (capital T)
+    is_inhaler ~ as.character(Time),  # Convert datetime to character
     TRUE ~ NA_character_
   ),
 
