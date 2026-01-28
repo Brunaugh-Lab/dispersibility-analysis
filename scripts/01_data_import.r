@@ -170,10 +170,10 @@ combined_data <- combined_data %>%
 
     # Extract metadata differently for INHALER vs RODOS
     formulation = case_when(
-      # INHALER: Extract from formulation_id column in CSV
-      is_inhaler ~ formulation_id,
-      # RODOS: Extract from folder structure (existing logic)
-      TRUE ~ str_extract(basename(dirname(dirname(source_file))), formulation_pattern)
+    # INHALER: Extract from formulation_id column in CSV
+    is_inhaler ~ formulation_id,
+    # RODOS: Extract from immediate parent folder (one level up)
+    TRUE ~ str_extract(basename(dirname(source_file)), formulation_pattern)
     ),
 
     module = case_when(
