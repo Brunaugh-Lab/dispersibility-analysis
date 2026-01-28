@@ -105,7 +105,7 @@ read_ld_data_from_structure <- function(
     replicate_pattern = "[Rr]ep_?\\d+",  # Flexible: rep1, Rep1, rep_1, Rep_1
     skip_rows = 2,
     module_folders = c("inhaler", "INHALER", "rodos", "RODOS"),
-    output_dir = "data/tidy",
+    output_dir = "data_v2/tidy",
     save_output = TRUE,
     output_filename = "standardized_data_with_conditions.csv",
     verbose = TRUE
@@ -150,23 +150,66 @@ read_ld_data_from_structure <- function(
     cat("------------------------------------------------------------------------\n\n")
   }
 
-  # Read all CSV files
-  combined_data <- read_csv(
-    file_paths,
+  # Read metadata and data separately for INHALER files, normal reading for RODOS
+inhaler_files <- file_paths[str_detect(file_paths, "(?i)inhaler")]
+rodos_files <- file_paths[!str_detect(file_paths, "(?i)inhaler")]
+
+# Read INHALER files with metadata extraction
+if (length(inhaler_files) > 0) {
+  # Read metadata (first 2 rows) for INHALER files
+  inhaler_metadata <- map_dfr(inhaler_files, function(file) {
+    headers <- read_csv(file, n_max = 1, col_names = FALSE, show_col_types = FALSE)
+    values <- read_csv(file, skip = 1, n_max = 1, col_names = FALSE, show_col_types = FALSE)
+
+    # Combine headers and values
+    metadata_row <- as.list(values)
+    names(metadata_row) <- as.character(headers[1,])
+
+    metadata_row$source_file <- file
+    return(as_tibble(metadata_row))
+  })
+
+  # Read data portion (skip metadata rows) for INHALER files
+  inhaler_data <- read_csv(
+    inhaler_files,
+    id = "source_file",
+    skip = 2,  # Skip metadata rows
+    col_types = cols(.default = "c"),
+    show_col_types = FALSE
+  ) %>%
+    clean_names()
+
+  # Join metadata with data
+  inhaler_combined <- inhaler_data %>%
+    left_join(inhaler_metadata, by = "source_file")
+} else {
+  inhaler_combined <- tibble()
+}
+
+# Read RODOS files normally (no metadata in CSV)
+if (length(rodos_files) > 0) {
+  rodos_combined <- read_csv(
+    rodos_files,
     id = "source_file",
     skip = skip_rows,
     col_types = cols(.default = "c"),
     show_col_types = FALSE
   ) %>%
-    clean_names() %>%
-    mutate(
-      # Convert size and cumulative distribution to numeric
-      particle_size_um = as.numeric(xo_mm),  # xo_mm is particle size in µm
-      q3_percent = as.numeric(q3_percent),
-      # CRITICAL: Convert Q3 from percent (0-100) to probability (0-1) for CDF
-      q3_cdf = q3_percent / 100
-    ) %>%
-    filter(!is.na(particle_size_um))
+    clean_names()
+} else {
+  rodos_combined <- tibble()
+}
+
+# Combine INHALER and RODOS data
+combined_data <- bind_rows(inhaler_combined, rodos_combined) %>%
+  mutate(
+    # Convert size and cumulative distribution to numeric
+    particle_size_um = as.numeric(xo_mm),  # xo_mm is particle size in µm
+    q3_percent = as.numeric(q3_percent),
+    # CRITICAL: Convert Q3 from percent (0-100) to probability (0-1) for CDF
+    q3_cdf = q3_percent / 100
+  ) %>%
+  filter(!is.na(particle_size_um))
 
   # Extract metadata with enhanced support for INHALER files
 combined_data <- combined_data %>%
