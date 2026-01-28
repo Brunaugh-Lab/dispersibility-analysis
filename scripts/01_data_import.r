@@ -234,9 +234,9 @@ combined_data <- combined_data %>%
 
     # Extract device information for INHALER files
     device_resistance = case_when(
-      is_inhaler & str_detect(device, "(?i)low") ~ "low",
-      is_inhaler & str_detect(device, "(?i)medium") ~ "medium",
-      is_inhaler & str_detect(device, "(?i)high") ~ "high",
+    is_inhaler & str_detect(Device, "(?i)low") ~ "low",
+    is_inhaler & str_detect(Device, "(?i)medium") ~ "medium",
+    is_inhaler & str_detect(Device, "(?i)high") ~ "high",
       !is_inhaler ~ "reference",  # RODOS is reference
       TRUE ~ "unknown"
     ),
