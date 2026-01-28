@@ -229,8 +229,9 @@ combined_data <- bind_rows(inhaler_combined, rodos_combined) %>%
 combined_data <- combined_data %>%
   mutate(
     # Determine if this is INHALER or RODOS based on path
-    module_folder = basename(dirname(source_file)),
-    is_inhaler = tolower(module_folder) == "inhaler",
+    # Check if INHALER or RODOS is anywhere in the path
+    is_inhaler = str_detect(source_file, "(?i)/inhaler/"),
+    is_rodos = str_detect(source_file, "(?i)/rodos/"),
 
     # Extract metadata differently for INHALER vs RODOS
     formulation = case_when(
@@ -241,10 +242,10 @@ combined_data <- combined_data %>%
     ),
 
     module = case_when(
-      is_inhaler ~ "INHALER",
-      tolower(module_folder) == "rodos" ~ "RODOS",
-      TRUE ~ toupper(module_folder)
-    ),
+    is_inhaler ~ "INHALER",
+    is_rodos ~ "RODOS",
+    TRUE ~ "UNKNOWN"
+  ),
 
     # Extract device information for INHALER files
     device_resistance = case_when(
