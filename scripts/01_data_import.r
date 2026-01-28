@@ -100,7 +100,7 @@ read_ld_data_from_structure <- function(
     module_folders = c("inhaler", "INHALER", "rodos", "RODOS"),
     output_dir = "data/tidy",
     save_output = TRUE,
-    output_filename = "standardized_data.csv",
+    output_filename = "standardized_data_with_conditions.csv",
     verbose = TRUE
 ) {
 
@@ -514,7 +514,7 @@ if (dir.exists("data")) {
   cat("AUTO-RUNNING DATA IMPORT\n")
   cat("========================================================================\n")
   cat("Reading from: data/\n")
-  cat("Saving to: data/tidy/standardized_data.csv\n")
+  cat("Saving to: data_v2/tidy/standardized_data_with_conditions.csv\n")
   cat("------------------------------------------------------------------------\n")
 
   # Run the import with defaults
