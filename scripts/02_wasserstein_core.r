@@ -7,12 +7,12 @@
 #          Automatically reads processed data and saves results.
 #
 # Auto-execution: Script automatically runs when sourced
-#   - Reads data/tidy/standardized_data.csv (from script 01)
+#   - Reads data_v2/tidy_v2/standardized_data_with_conditions.csv (from script 01)
 #   - Calculates W1 distances for all formulations
-#   - Saves to results/wasserstein_results.csv
+#   - Saves to results_v2/wasserstein_results.csv
 #
-# Input: data/tidy/standardized_data.csv (from 01_data_import.R)
-# Output: results/wasserstein_results.csv
+# Input: data_v2/tidy_v2/standardized_data_with_conditions.csv (from 01_data_import.R)
+# Output: results_v2/wasserstein_results.csv
 #
 # Methodology: Wasserstein-1 (Earth Mover's) distance quantifies the minimum
 #              redistribution work needed to transform one distribution into another
@@ -183,7 +183,7 @@ calculate_pairwise_wasserstein <- function(
     data,
     reference_module = "RODOS",
     test_module = "INHALER",
-    output_dir = "results",
+    output_dir = "results_v2",
     save_output = TRUE,
     output_filename = "wasserstein_results.csv",
     verbose = TRUE
@@ -519,8 +519,8 @@ load_wasserstein_results <- function(
 #' w1_results <- run_wasserstein_analysis()
 #'
 run_wasserstein_analysis <- function(
-    processed_dir = "data/tidy",
-    results_dir = "results",
+    processed_dir = "data_v2/tidy",
+    results_dir = "results_v2",
     reference_module = "RODOS",
     test_module = "INHALER",
     verbose = TRUE
@@ -568,13 +568,13 @@ run_wasserstein_analysis <- function(
 # ==============================================================================
 
 # Check if processed data exists
-if (file.exists("data/tidy/standardized_data.csv")) {
+if (file.exists("data_v2/tidy/standardized_data_with_conditions.csv")) {
 
   cat("\n========================================================================\n")
   cat("AUTO-RUNNING WASSERSTEIN ANALYSIS\n")
   cat("========================================================================\n")
-  cat("Reading: data/tidy/standardized_data.csv\n")
-  cat("Saving to: results/wasserstein_results.csv\n")
+  cat("Reading: data_v2/tidy/standardized_data_with_conditions.csv\n")
+  cat("Saving to: results_v2/wasserstein_results.csv\n")
   cat("------------------------------------------------------------------------\n")
 
   # Run the complete analysis
@@ -598,7 +598,7 @@ if (file.exists("data/tidy/standardized_data.csv")) {
   cat("\n========================================================================\n")
   cat("WASSERSTEIN ANALYSIS - WAITING FOR INPUT DATA\n")
   cat("========================================================================\n")
-  cat("Tidy data not found: data/tidy/standardized_data.csv\n")
+  cat("Tidy data not found: data_v2/tidy/standardized_data_with_conditions.csv\n")
   cat("\nPlease run 01_data_import.R first:\n")
   cat("  source('scripts/01_data_import.R')\n")
   cat("\nThen run this script again:\n")
