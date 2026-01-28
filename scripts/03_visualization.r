@@ -774,9 +774,12 @@ if (tidy_data_exists && results_exist) {
   cat("========================================================================\n")
   cat("Generated files:\n")
   n_formulations <- n_distinct(.viz_data$formulation)
-  cat("  - figures/*_comparison.pdf (", n_formulations, " individual formulation PDFs)\n", sep = "")
-  cat("  - figures/all_inhaler_overlay.pdf (all INHALER distributions)\n")
-  cat("  - figures/w1_ranking.pdf (dispersibility ranking)\n")  # <-- CHANGED to PDF
+  n_devices <- n_distinct(.viz_data$device_resistance)
+  n_pressures <- n_distinct(.viz_data$pressure_drop_clean)
+  cat(sprintf("  - figures_v2/*_comparison_faceted.pdf (%d formulations, %d×%d grids)\n",
+              n_formulations, n_devices, n_pressures))
+  cat(sprintf("  - figures_v2/all_inhaler_overlay.pdf (%d×%d facets)\n", n_devices, n_pressures))
+  cat(sprintf("  - figures_v2/w1_ranking.pdf (%d×%d facets)\n", n_devices, n_pressures))
   cat("------------------------------------------------------------------------\n")
   cat("Additional plots available via functions:\n")
   cat("  - plot_d50_comparison() for median size comparison\n")
