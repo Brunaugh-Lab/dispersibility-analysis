@@ -436,83 +436,115 @@ plot_w1_bars <- function(
     w1_results,
     metric = "W1_micrometers",
     sort_by = TRUE,
-    bar_color = "#1F78B4",
-    show_values = TRUE,
     save_plot = FALSE,
     output_dir = "figures_v2",
-    filename = "w1_ranking.pdf",  # <-- CHANGED default to PDF
-    width = 10,
-    height = 6,
+    filename = "w1_ranking.pdf",
+    width = NULL,  # Now auto-calculated if NULL
+    height = NULL, # Now auto-calculated if NULL
     dpi = 300
 ) {
 
-  if (!metric %in% c("W1_micrometers", "W1_normalized")) {
-    stop("metric must be 'W1_micrometers' or 'W1_normalized'")
+  metric_labels <- list(
+    W1_micrometers = "W₁ Distance (µm)",
+    W1_normalized = "W₁/d₅₀ (Normalized)",
+    d50_shift_um = "d₅₀ Shift (µm)"
+  )
+
+  y_label <- metric_labels[[metric]]
+
+  if (is.null(y_label)) {
+    stop("metric must be one of: W1_micrometers, W1_normalized, d50_shift_um")
   }
+
+  # FLEXIBLE: Auto-detect factor levels
+  device_levels <- w1_results %>%
+    distinct(device_resistance) %>%
+    arrange(device_resistance) %>%
+    pull(device_resistance)
+
+  if (all(c("low", "medium", "high") %in% device_levels)) {
+    device_levels <- c("low", "medium", "high")
+  }
+
+  pressure_levels <- w1_results %>%
+    distinct(pressure_drop) %>%
+    mutate(numeric_pressure = as.numeric(str_extract(pressure_drop, "\\d+"))) %>%
+    arrange(numeric_pressure) %>%
+    pull(pressure_drop)
 
   plot_data <- w1_results %>%
-    select(formulation, all_of(metric))
+    mutate(
+      device_resistance = factor(device_resistance, levels = device_levels),
+      pressure_drop = factor(pressure_drop, levels = pressure_levels)
+    )
 
   if (sort_by) {
+    # Sort formulations by mean metric across all conditions
+    order_levels <- w1_results %>%
+      group_by(formulation) %>%
+      summarise(mean_metric = mean(.data[[metric]], na.rm = TRUE), .groups = 'drop') %>%
+      arrange(desc(mean_metric)) %>%
+      pull(formulation)
+
     plot_data <- plot_data %>%
-      arrange(!!sym(metric)) %>%
-      mutate(formulation = factor(formulation, levels = formulation))
+      mutate(formulation = factor(formulation, levels = order_levels))
   }
 
-  y_label <- if (metric == "W1_micrometers") {
-    "Wasserstein Distance W₁ (µm)"
-  } else {
-    "Normalized Wasserstein Distance (W₁/d₅₀)"
+  # Create labels
+  device_labels <- setNames(
+    str_to_title(str_replace_all(device_levels, "_", " ")),
+    device_levels
+  )
+
+  pressure_labels <- setNames(
+    str_replace(pressure_levels, "_", " "),
+    pressure_levels
+  )
+
+  n_devices <- length(device_levels)
+  n_pressures <- length(pressure_levels)
+  n_formulations <- n_distinct(plot_data$formulation)
+
+  # FLEXIBLE: Auto-calculate dimensions if not provided
+  if (is.null(width)) {
+    width <- max(10, 5 + n_pressures * 2 + n_formulations * 0.5)
+  }
+  if (is.null(height)) {
+    height <- max(8, 3 + n_devices * 2.5)
   }
 
-  p <- ggplot(plot_data, aes(x = formulation, y = !!sym(metric))) +
-    geom_col(fill = bar_color, color = "black", linewidth = 0.3) +
+  p <- ggplot(plot_data, aes(x = formulation, y = .data[[metric]])) +
+    geom_col(fill = "#1F78B4", color = "black", linewidth = 0.3) +
+    facet_grid(device_resistance ~ pressure_drop,
+               labeller = labeller(
+                 device_resistance = device_labels,
+                 pressure_drop = pressure_labels
+               )) +
     labs(
       x = "Formulation",
       y = y_label,
-      title = "Dispersibility Ranking by Wasserstein Distance",
-      subtitle = "Lower W₁ = Better Dispersibility"
+      title = "Dispersibility Ranking by Device × Pressure",
+      subtitle = sprintf("Lower W₁ = Better dispersibility (%d×%d conditions)",
+                        n_devices, n_pressures)
     ) +
-    theme_classic(base_size = 14) +
+    theme_classic(base_size = 12) +
     theme(
-      axis.text.x = element_text(angle = 45, hjust = 1, face = "bold"),
+      axis.text.x = element_text(angle = 45, hjust = 1, face = "bold", size = 9),
       axis.title = element_text(face = "bold"),
       panel.grid.major.y = element_line(color = "grey90", linewidth = 0.3),
       plot.title = element_text(face = "bold", size = 16),
-      plot.subtitle = element_text(size = 12)
+      plot.subtitle = element_text(size = 11),
+      strip.background = element_rect(fill = "grey90", color = "black"),
+      strip.text = element_text(face = "bold", size = 10)
     )
 
-  if (show_values) {
-    p <- p + geom_text(
-      aes(label = sprintf("%.3f", !!sym(metric))),
-      vjust = -0.5,
-      size = 3.5,
-      fontface = "bold"
-    )
-  }
-
-  # Save if requested
   if (save_plot) {
-    if (!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
-
-    output_path <- file.path(output_dir, filename)
-
-    # Force base PDF device for reliability
-    ggsave(
-      filename = output_path,
-      plot = p,
-      width = width,
-      height = height,
-      units = "in",
-      device = "pdf"
-    )
-
-    # Assert it actually wrote
-    if (!file.exists(output_path)) {
-      stop("ggsave completed but file not found at: ", normalizePath(output_path, winslash = "/"))
+    if (!dir.exists(output_dir)) {
+      dir.create(output_dir, recursive = TRUE)
     }
-
-    cat("✓ Saved:", normalizePath(output_path, winslash = "/"), "\n")
+    output_path <- file.path(output_dir, filename)
+    ggsave(output_path, p, width = width, height = height, dpi = dpi)
+    cat(sprintf("✓ Saved: %s (%d×%d grid)\n", output_path, n_devices, n_pressures))
   }
 
   return(p)
