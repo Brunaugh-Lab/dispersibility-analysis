@@ -251,10 +251,10 @@ combined_data <- combined_data %>%
     ),
 
     pressure_drop_clean = case_when(
-      is_inhaler ~ str_extract(pressure_drop, "\\d+"),  # Extract just the number
-      !is_inhaler ~ "reference",  # RODOS is reference
-      TRUE ~ "unknown"
-    ),
+    is_inhaler ~ str_extract(coalesce(pressure_drop, `pressure-drop`), "\\d+"),  # Handle both naming variants
+    !is_inhaler ~ "reference",  # RODOS is reference
+    TRUE ~ "unknown"
+  ),
 
     # Extract timestamp for INHALER files
     measurement_time = case_when(
