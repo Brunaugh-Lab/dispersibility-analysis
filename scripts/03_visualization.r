@@ -241,7 +241,7 @@ plot_all_inhaler_overlay <- function(
     filter(module == test_module)
 
   summary_data <- plot_data %>%
-    group_by(formulation, particle_size_um) %>%
+    group_by(formulation, device_resistance, pressure_drop_clean, particle_size_um) %>%
     summarise(
       q3_percent_mean = mean(q3_percent, na.rm = TRUE),
       q3_percent_sd = sd(q3_percent, na.rm = TRUE),
@@ -249,7 +249,46 @@ plot_all_inhaler_overlay <- function(
     ) %>%
     mutate(q3_percent_sd = ifelse(is.na(q3_percent_sd), 0, q3_percent_sd))
 
+  # FLEXIBLE: Auto-detect factor levels
+  device_levels <- summary_data %>%
+    distinct(device_resistance) %>%
+    arrange(device_resistance) %>%
+    pull(device_resistance)
+
+  if (all(c("low", "medium", "high") %in% device_levels)) {
+    device_levels <- c("low", "medium", "high")
+  }
+
+  pressure_levels <- summary_data %>%
+    distinct(pressure_drop_clean) %>%
+    mutate(numeric_pressure = as.numeric(str_extract(pressure_drop_clean, "\\d+"))) %>%
+    arrange(numeric_pressure) %>%
+    pull(pressure_drop_clean)
+
+  summary_data <- summary_data %>%
+    mutate(
+      device_resistance = factor(device_resistance, levels = device_levels),
+      pressure_drop_clean = factor(pressure_drop_clean, levels = pressure_levels)
+    )
+
+  # Create labels
+  device_labels <- setNames(
+    str_to_title(str_replace_all(device_levels, "_", " ")),
+    device_levels
+  )
+
+  pressure_labels <- setNames(
+    str_replace(pressure_levels, "_", " "),
+    pressure_levels
+  )
+
   n_formulations <- n_distinct(summary_data$formulation)
+  n_devices <- length(device_levels)
+  n_pressures <- length(pressure_levels)
+
+  # Dynamic plot sizing
+  plot_width <- max(12, 5 + n_pressures * 3)
+  plot_height <- max(8, 3 + n_devices * 2.5)
 
   p <- ggplot(summary_data, aes(x = particle_size_um, y = q3_percent_mean,
                                  color = formulation, fill = formulation)) +
@@ -259,6 +298,11 @@ plot_all_inhaler_overlay <- function(
       alpha = 0.1, color = NA
     ) +
     geom_line(linewidth = 1.0) +
+    facet_grid(device_resistance ~ pressure_drop_clean,
+               labeller = labeller(
+                 device_resistance = device_labels,
+                 pressure_drop_clean = pressure_labels
+               )) +
     scale_x_log10(
       limits = c(0.5, 100),
       breaks = c(0.5, 1, 2, 5, 10, 20, 50, 100),
@@ -273,10 +317,11 @@ plot_all_inhaler_overlay <- function(
     labs(
       x = "Particle Size (µm)",
       y = expression("Cumulative Distribution " * Q[3] * " (%)"),
-      title = paste0("All ", test_module, " Distributions Overlay"),
-      subtitle = paste("Comparing", n_formulations, "formulations")
+      title = sprintf("All %s Distributions by Device Resistance × Pressure Drop", test_module),
+      subtitle = sprintf("%d formulations across %d conditions (%d×%d grid)",
+                        n_formulations, n_devices * n_pressures, n_devices, n_pressures)
     ) +
-    theme_classic(base_size = 14) +
+    theme_classic(base_size = 12) +
     theme(
       panel.grid.major = element_line(color = "grey90", linewidth = 0.3),
       panel.grid.minor.x = element_line(color = "grey95", linewidth = 0.2),
@@ -284,14 +329,16 @@ plot_all_inhaler_overlay <- function(
       legend.title = element_text(face = "bold"),
       legend.position = "right",
       plot.title = element_text(face = "bold", size = 16),
-      plot.subtitle = element_text(size = 12)
+      plot.subtitle = element_text(size = 11),
+      strip.background = element_rect(fill = "grey90", color = "black"),
+      strip.text = element_text(face = "bold", size = 10)
     )
 
   output_path <- file.path(output_dir, filename)
-  ggsave(output_path, p, width = width, height = height, device = "pdf")
+  ggsave(output_path, p, width = plot_width, height = plot_height, device = "pdf")
 
   if (verbose) {
-    cat("✓ Saved:", output_path, "\n")
+    cat(sprintf("✓ Saved: %s (%d×%d grid)\n", output_path, n_devices, n_pressures))
   }
 
   return(p)
