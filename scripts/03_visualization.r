@@ -72,8 +72,10 @@ plot_individual_formulation_pdfs <- function(
     form_data <- plot_data %>%
       filter(formulation == form)
 
-    summary_data <- form_data %>%
-      group_by(module, particle_size_um) %>%
+    # Pool RODOS reference (no device/pressure filtering)
+    rodos_summary <- form_data %>%
+      filter(module == reference_module) %>%
+      group_by(particle_size_um) %>%
       summarise(
         q3_percent_mean = mean(q3_percent, na.rm = TRUE),
         q3_percent_sd = sd(q3_percent, na.rm = TRUE),
@@ -81,8 +83,78 @@ plot_individual_formulation_pdfs <- function(
       ) %>%
       mutate(
         q3_percent_sd = ifelse(is.na(q3_percent_sd), 0, q3_percent_sd),
-        module = factor(module, levels = c(reference_module, test_module))
+        module = reference_module
       )
+
+    # Pool INHALER by device×pressure combination
+    inhaler_summary <- form_data %>%
+      filter(module == test_module) %>%
+      group_by(device_resistance, pressure_drop_clean, particle_size_um) %>%
+      summarise(
+        q3_percent_mean = mean(q3_percent, na.rm = TRUE),
+        q3_percent_sd = sd(q3_percent, na.rm = TRUE),
+        .groups = 'drop'
+      ) %>%
+      mutate(
+        q3_percent_sd = ifelse(is.na(q3_percent_sd), 0, q3_percent_sd),
+        module = test_module
+      )
+
+    # Get unique device-pressure combinations
+    device_pressure_combos <- inhaler_summary %>%
+      distinct(device_resistance, pressure_drop_clean)
+
+    # Expand RODOS to match all device-pressure combos (for faceting)
+    rodos_expanded <- device_pressure_combos %>%
+      cross_join(rodos_summary)
+
+    # Combine for plotting
+    summary_data <- bind_rows(rodos_expanded, inhaler_summary) %>%
+      mutate(module = factor(module, levels = c(reference_module, test_module)))
+
+    # FLEXIBLE: Auto-detect factor levels and create natural ordering
+    # For device_resistance: natural order (low, medium, high) or alphabetical
+    device_levels <- summary_data %>%
+      distinct(device_resistance) %>%
+      arrange(device_resistance) %>%
+      pull(device_resistance)
+
+    # Try to sort as: low < medium < high if those levels exist
+    if (all(c("low", "medium", "high") %in% device_levels)) {
+      device_levels <- c("low", "medium", "high")
+    }
+
+    # For pressure_drop: extract numeric values and sort
+    pressure_levels <- summary_data %>%
+      distinct(pressure_drop_clean) %>%
+      mutate(
+        numeric_pressure = as.numeric(str_extract(pressure_drop_clean, "\\d+"))
+      ) %>%
+      arrange(numeric_pressure) %>%
+      pull(pressure_drop_clean)
+
+    summary_data <- summary_data %>%
+      mutate(
+        device_resistance = factor(device_resistance, levels = device_levels),
+        pressure_drop_clean = factor(pressure_drop_clean, levels = pressure_levels)
+      )
+
+    # FLEXIBLE: Create human-readable labels
+    device_labels <- setNames(
+      str_to_title(str_replace_all(device_levels, "_", " ")),
+      device_levels
+    )
+
+    pressure_labels <- setNames(
+      str_replace(pressure_levels, "_", " "),
+      pressure_levels
+    )
+
+    # FLEXIBLE: Calculate optimal plot dimensions based on number of facets
+    n_devices <- length(device_levels)
+    n_pressures <- length(pressure_levels)
+    plot_width <- max(10, 4 + n_pressures * 3)  # Min 10", scales with columns
+    plot_height <- max(8, 3 + n_devices * 2.5)  # Min 8", scales with rows
 
     p <- ggplot(summary_data, aes(x = particle_size_um, y = q3_percent_mean,
                                    color = module, fill = module)) +
@@ -92,6 +164,11 @@ plot_individual_formulation_pdfs <- function(
         alpha = 0.15, color = NA
       ) +
       geom_line(linewidth = 1.0) +
+      facet_grid(device_resistance ~ pressure_drop_clean,
+                 labeller = labeller(
+                   device_resistance = device_labels,
+                   pressure_drop_clean = pressure_labels
+                 )) +
       scale_x_log10(
         limits = c(0.5, 100),
         breaks = c(0.5, 1, 2, 5, 10, 20, 50, 100),
@@ -107,9 +184,10 @@ plot_individual_formulation_pdfs <- function(
         x = "Particle Size (µm)",
         y = expression("Cumulative Distribution " * Q[3] * " (%)"),
         title = paste("Formulation:", form),
-        subtitle = paste0(test_module, " vs ", reference_module, " Comparison")
+        subtitle = sprintf("INHALER (%d devices × %d pressures) vs %s Reference",
+                          n_devices, n_pressures, reference_module)
       ) +
-      theme_classic(base_size = 14) +
+      theme_classic(base_size = 12) +
       theme(
         panel.grid.major = element_line(color = "grey90", linewidth = 0.3),
         panel.grid.minor.x = element_line(color = "grey95", linewidth = 0.2),
@@ -117,15 +195,17 @@ plot_individual_formulation_pdfs <- function(
         legend.title = element_text(face = "bold"),
         legend.position = "bottom",
         plot.title = element_text(face = "bold", size = 16),
-        plot.subtitle = element_text(size = 12)
+        plot.subtitle = element_text(size = 11),
+        strip.background = element_rect(fill = "grey90", color = "black"),
+        strip.text = element_text(face = "bold", size = 10)
       )
 
-    filename <- paste0(form, "_comparison.pdf")
+    filename <- paste0(form, "_comparison_faceted.pdf")
     output_path <- file.path(output_dir, filename)
-    ggsave(output_path, p, width = width, height = height, device = "pdf")
+    ggsave(output_path, p, width = plot_width, height = plot_height, device = "pdf")
 
     if (verbose) {
-      cat("✓ Saved:", output_path, "\n")
+      cat(sprintf("✓ Saved: %s (%d×%d grid)\n", output_path, n_devices, n_pressures))
     }
 
     plots[[form]] <- p
