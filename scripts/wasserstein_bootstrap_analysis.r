@@ -768,34 +768,48 @@ plot_effect_noise_analysis <- function(bootstrap_results, effect_noise_results,
       panel.grid.major.y = element_line(color = "grey90", linewidth = 0.3)
     )
 
-  # Plot 4: Signal strength interpretation (faceted by factor)
+  # Plot 4: Effect-to-Noise Ratio bar chart (clearer than circles)
   p4 <- effect_noise_results %>%
     mutate(
+      factor_label = case_when(
+        factor_type == "formulation" ~ "Formulation",
+        factor_type == "device_resistance" ~ "Device Resistance",
+        factor_type == "pressure_drop" ~ "Pressure Drop",
+        TRUE ~ str_to_title(factor_type)
+      ),
+      factor_label = fct_reorder(factor_label, effect_to_noise_ratio),
       interpretation_color = case_when(
         effect_to_noise_ratio >= 3 ~ "darkgreen",
         effect_to_noise_ratio >= 2 ~ "orange",
         effect_to_noise_ratio >= 1 ~ "gold",
         TRUE ~ "red"
       ),
-      x = 1, y = 1
+      signal_category = case_when(
+        effect_to_noise_ratio >= 3 ~ "Strong (≥3)",
+        effect_to_noise_ratio >= 2 ~ "Moderate (2-3)",
+        effect_to_noise_ratio >= 1 ~ "Weak (1-2)",
+        TRUE ~ "Poor (<1)"
+      )
     ) %>%
-    ggplot(aes(x, y)) +
-    geom_point(aes(color = interpretation_color), size = 30, alpha = 0.8) +
+    ggplot(aes(x = factor_label, y = effect_to_noise_ratio)) +
+    geom_col(aes(fill = interpretation_color), alpha = 0.8, width = 0.6) +
+    geom_hline(yintercept = c(1, 2, 3), linetype = "dashed", alpha = 0.4) +
     geom_text(aes(label = sprintf("%.2f", effect_to_noise_ratio)),
-              size = 6, fontface = "bold", color = "white") +
-    scale_color_identity() +
-    facet_wrap(~factor_type, ncol = 3) +
+              vjust = -0.5, size = 4, fontface = "bold") +
+    scale_fill_identity() +
     labs(
-      title = "Signal Strength Assessment by Factor"
+      x = "Factor",
+      y = "Effect-to-Noise Ratio",
+      title = "Signal Strength by Factor",
+      subtitle = "Higher ratios indicate factor effects exceed measurement noise"
     ) +
-    theme_void() +
+    theme_classic(base_size = 12) +
     theme(
-      plot.title = element_text(hjust = 0.5, face = "bold", size = 14),
-      plot.subtitle = element_text(hjust = 0.5, size = 12)
-    ) +
-    xlim(0.5, 1.5) + ylim(0.5, 1.5)
+      panel.grid.major.y = element_line(color = "grey90", linewidth = 0.3),
+      axis.text.x = element_text(angle = 0, hjust = 0.5)
+    )
 
-  # Combine plots
+  # Combine plots - improved layout
   combined <- (p1 | p2) / (p3 | p4) +
     plot_annotation(
       title = "Effect-to-Noise Analysis Summary",
