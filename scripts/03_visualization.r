@@ -998,7 +998,7 @@ plot_w1_by_device <- function(
   if (is.null(height)) height <- 6
 
   p <- ggplot(plot_data, aes(x = formulation, y = .data[[metric]], fill = pressure_drop)) +
-    geom_col(position = position_dodge(width = 0.85), color = "black", linewidth = 0.3) +
+    geom_col(position = position_dodge(width = 0.9), color = "black", linewidth = 0.3) +
     facet_wrap(~ device_resistance, nrow = 1,
                labeller = labeller(device_resistance = device_labels)) +
     scale_fill_viridis_d(option = "plasma", name = "Device Pressure Drop",
@@ -1101,7 +1101,7 @@ plot_w1_by_pressure <- function(
   if (is.null(height)) height <- 6
 
   p <- ggplot(plot_data, aes(x = formulation, y = .data[[metric]], fill = device_resistance)) +
-    geom_col(position = position_dodge(width = 0.85), color = "black", linewidth = 0.3) +
+    geom_col(position = position_dodge(width = 0.9), color = "black", linewidth = 0.3) +
     facet_wrap(~ pressure_drop, nrow = 1,
                labeller = labeller(pressure_drop = pressure_labels)) +
     scale_fill_viridis_d(option = "plasma", name = "Device Resistance",
