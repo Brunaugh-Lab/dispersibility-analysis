@@ -212,7 +212,19 @@ if (length(rodos_files) > 0) {
   rodos_combined <- tibble()
 }
 
-# Combine INHALER and RODOS data
+# Select only essential columns before combining (INHALER has many extra metadata columns)
+if (nrow(inhaler_combined) > 0) {
+  inhaler_combined <- inhaler_combined %>%
+    select(source_file, xo_mm, q3_percent,
+           formulation_id, Device, pressure_drop, `pressure-drop`, Time)
+}
+
+if (nrow(rodos_combined) > 0) {
+  rodos_combined <- rodos_combined %>%
+    select(source_file, xo_mm, q3_percent)
+}
+
+# Combine INHALER and RODOS data (now they have compatible columns)
 combined_data <- bind_rows(inhaler_combined, rodos_combined) %>%
   mutate(
     # Convert size and cumulative distribution to numeric
