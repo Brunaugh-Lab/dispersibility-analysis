@@ -15,12 +15,12 @@
 #   - Performs bootstrap resampling (default: 2000 iterations)
 #   - Calculates 95% CIs and standard errors for each formulation
 #   - Computes effect-to-noise ratios for device resistance/pressure effects
-#   - Saves to results/bootstrap_results.csv and results/effect_noise_ratios.csv
+#   - Saves to results_v2/bootstrap_results.csv and results_v2/effect_noise_ratios.csv
 #
-# Input: data/tidy/standardized_data.csv (from 01_data_import.R)
+# Input: data_v2/tidy/standardized_data.csv (from 01_data_import.R)
 # Output:
-#   - results/bootstrap_results.csv (W1 distributions with CIs)
-#   - results/effect_noise_ratios.csv (signal vs noise quantification)
+#   - results_v2/bootstrap_results.csv (W1 distributions with CIs)
+#   - results_v2/effect_noise_ratios.csv (signal vs noise quantification)
 #
 # Methodology:
 #   1. Pool replicates → create empirical particle size distributions
@@ -270,7 +270,7 @@ bootstrap_w1_single <- function(data, formulation, reference_module = "RODOS",
 #'
 bootstrap_w1_analysis <- function(data, reference_module = "RODOS",
                                  test_module = "INHALER", n_bootstrap = 2000,
-                                 output_dir = "results", save_output = TRUE,
+                                 output_dir = "results_v2", save_output = TRUE,
                                  output_filename = "bootstrap_results.csv",
                                  seed = 42, verbose = TRUE) {
 
