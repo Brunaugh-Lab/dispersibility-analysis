@@ -52,7 +52,10 @@ library(broom)
 #'
 #' @return List of CDF vectors (one per replicate)
 #'
-get_replicate_cdfs <- function(data, formulation, module, device_resistance = NULL, pressure_drop = NULL, common_size_grid = NULL) {
+get_replicate_cdfs <- function(data, formulation, module,
+                               device_resistance = NULL,
+                               pressure_drop = NULL,
+                               common_size_grid = NULL) {
 
   # Filter data for this condition
   condition_data <- data %>%
@@ -60,11 +63,14 @@ get_replicate_cdfs <- function(data, formulation, module, device_resistance = NU
       formulation == !!formulation,
       module == !!module
     )
+
+  # Filter by device resistance if specified (for INHALER conditions)
   if (!is.null(device_resistance)) {
     condition_data <- condition_data %>%
       filter(device_resistance == !!device_resistance)
   }
 
+  # Filter by pressure drop if specified (for INHALER conditions)
   if (!is.null(pressure_drop)) {
     condition_data <- condition_data %>%
       filter(pressure_drop_clean == !!pressure_drop)
