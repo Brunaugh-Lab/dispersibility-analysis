@@ -810,7 +810,7 @@ plot_cdf_by_pressure <- function(
     reference_module = "RODOS",
     test_module = "INHALER",
     formulation_colors = NULL,
-    device_linetypes = c("low" = "dashed", "medium" = "dotdash", "high" = "solid"),
+    device_linetypes = NULL,
     output_dir = "figures_v2",
     filename = "CDF_by_pressure.pdf",
     width = NULL,
@@ -851,6 +851,16 @@ plot_cdf_by_pressure <- function(
     distinct(device_resistance) %>%
     arrange(device_resistance) %>%
     pull(device_resistance)
+
+# Auto-generate linetypes if not provided
+  if (is.null(device_linetypes)) {
+    linetype_options <- c("solid", "dashed", "dotted", "dotdash", "longdash", "twodash")
+    n_devices_detected <- length(device_levels)
+    device_linetypes <- setNames(
+      linetype_options[1:n_devices_detected],
+      device_levels
+    )
+  }
 
   if (all(c("low", "medium", "high") %in% device_levels)) {
     device_levels <- c("low", "medium", "high")
