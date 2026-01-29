@@ -767,7 +767,11 @@ generate_all_plots <- function(
   return(invisible(list(
     individual = p_individual,
     overlay = p_overlay,
-    w1 = p_w1
+    w1 = p_w1,
+    cdf_device = p_cdf_device,
+    cdf_pressure = p_cdf_pressure,
+    w1_device = p_w1_device,
+    w1_pressure = p_w1_pressure
   )))
 }
 
