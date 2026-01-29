@@ -642,12 +642,27 @@ plot_bootstrap_results <- function(bootstrap_results, output_dir = "figures_v2",
       panel.grid.major.y = element_line(color = "grey90", linewidth = 0.3)
     )
 
-  # Combine plots
+  # Combine plots with dynamic sizing
   combined <- (p1 / p2 / p3) +
     plot_annotation(
       title = "Bootstrap Analysis Summary",
       tag_levels = 'A'
     )
+
+  # Calculate dynamic plot dimensions
+  plot_width <- if (has_device & has_pressure) {
+    max(14, 5 + n_pressures * 3)
+  } else if (has_device | has_pressure) {
+    max(12, 8 + max(n_devices, n_pressures) * 2)
+  } else {
+    12
+  }
+
+  plot_height <- if (has_device & has_pressure) {
+    max(15, 12 + n_devices * 2)
+  } else {
+    12
+  }
 
   plots <- list(confidence_intervals = p1, standard_errors = p2,
                 relative_errors = p3, combined = combined)
@@ -655,12 +670,11 @@ plot_bootstrap_results <- function(bootstrap_results, output_dir = "figures_v2",
   # Save plots
   if (save_plots) {
     output_path <- file.path(output_dir, "bootstrap_analysis.pdf")
-    ggsave(output_path, combined, width = 12, height = 10, device = "pdf")
+    ggsave(output_path, combined, width = plot_width, height = plot_height, device = "pdf")
 
     if (verbose) {
       cat("✓ Bootstrap plots saved to:", output_path, "\n")
     }
-  }
 
   return(plots)
 }
