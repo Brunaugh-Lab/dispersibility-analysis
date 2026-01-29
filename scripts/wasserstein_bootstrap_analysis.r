@@ -588,31 +588,59 @@ plot_bootstrap_results <- function(bootstrap_results, output_dir = "figures_v2",
     dir.create(output_dir, recursive = TRUE)
   }
 
-  # Plot 1: Confidence intervals
+  # Detect number of factor levels
+  n_devices <- n_distinct(bootstrap_results$device_resistance, na.rm = TRUE)
+  n_pressures <- n_distinct(bootstrap_results$pressure_drop, na.rm = TRUE)
+  has_device <- "device_resistance" %in% names(bootstrap_results) && n_devices > 1
+  has_pressure <- "pressure_drop" %in% names(bootstrap_results) && n_pressures > 1
+
+  # Create condition label for x-axis (combines all non-varying factors)
+  bootstrap_results <- bootstrap_results %>%
+    mutate(
+      condition_label = if_else(
+        has_device & has_pressure,
+        paste0(device_resistance, "\n", pressure_drop),
+        if_else(has_device, as.character(device_resistance),
+                if_else(has_pressure, as.character(pressure_drop), ""))
+      ),
+      condition_label = if_else(condition_label == "", "All", condition_label)
+    )
+
+  # Plot 1: Confidence intervals with smart faceting
   p1 <- bootstrap_results %>%
-    mutate(formulation = fct_reorder(formulation, w1_observed)) %>%
-    ggplot(aes(x = formulation)) +
+    ggplot(aes(x = formulation, color = formulation)) +
     geom_errorbar(aes(ymin = w1_ci_lower, ymax = w1_ci_upper),
                   width = 0.3, alpha = 0.7) +
-    geom_point(aes(y = w1_observed), size = 3, color = "red") +
-    geom_point(aes(y = w1_mean), size = 2, color = "blue", alpha = 0.7) +
+    geom_point(aes(y = w1_observed), size = 3) +
+    geom_point(aes(y = w1_mean), size = 2, alpha = 0.5, shape = 1) +
     labs(
       x = "Formulation",
       y = "Wasserstein Distance (µm)",
       title = "Bootstrap Confidence Intervals for W1",
-      subtitle = "Red: Observed W1, Blue: Bootstrap Mean, Bars: 95% CI"
+      subtitle = "Filled: Observed W1, Open: Bootstrap Mean, Bars: 95% CI"
     ) +
     theme_classic(base_size = 12) +
     theme(
       axis.text.x = element_text(angle = 45, hjust = 1),
-      panel.grid.major.y = element_line(color = "grey90", linewidth = 0.3)
+      panel.grid.major.y = element_line(color = "grey90", linewidth = 0.3),
+      legend.position = "none"
     )
 
-  # Plot 2: Standard errors
+  # Add faceting if we have varying factors
+  if (has_device & has_pressure) {
+    p1 <- p1 + facet_grid(device_resistance ~ pressure_drop,
+                          labeller = labeller(device_resistance = label_both,
+                                            pressure_drop = label_both))
+  } else if (has_device) {
+    p1 <- p1 + facet_wrap(~device_resistance, labeller = label_both)
+  } else if (has_pressure) {
+    p1 <- p1 + facet_wrap(~pressure_drop, labeller = label_both)
+  }
+
+  # Plot 2: Standard errors - show by condition
   p2 <- bootstrap_results %>%
-    mutate(formulation = fct_reorder(formulation, w1_sd)) %>%
-    ggplot(aes(x = formulation, y = w1_sd)) +
-    geom_col(fill = "skyblue", alpha = 0.7) +
+    ggplot(aes(x = formulation, y = w1_sd, fill = formulation)) +
+    geom_col(alpha = 0.7) +
     labs(
       x = "Formulation",
       y = "Bootstrap Standard Error (µm)",
@@ -621,14 +649,24 @@ plot_bootstrap_results <- function(bootstrap_results, output_dir = "figures_v2",
     theme_classic(base_size = 12) +
     theme(
       axis.text.x = element_text(angle = 45, hjust = 1),
-      panel.grid.major.y = element_line(color = "grey90", linewidth = 0.3)
+      panel.grid.major.y = element_line(color = "grey90", linewidth = 0.3),
+      legend.position = "none"
     )
+
+  if (has_device & has_pressure) {
+    p2 <- p2 + facet_grid(device_resistance ~ pressure_drop,
+                          labeller = labeller(device_resistance = label_both,
+                                            pressure_drop = label_both))
+  } else if (has_device) {
+    p2 <- p2 + facet_wrap(~device_resistance, labeller = label_both)
+  } else if (has_pressure) {
+    p2 <- p2 + facet_wrap(~pressure_drop, labeller = label_both)
+  }
 
   # Plot 3: Relative standard error
   p3 <- bootstrap_results %>%
-    mutate(formulation = fct_reorder(formulation, w1_relative_se)) %>%
-    ggplot(aes(x = formulation, y = 100 * w1_relative_se)) +
-    geom_col(fill = "lightcoral", alpha = 0.7) +
+    ggplot(aes(x = formulation, y = 100 * w1_relative_se, fill = formulation)) +
+    geom_col(alpha = 0.7) +
     geom_hline(yintercept = c(5, 10, 20), linetype = "dashed", alpha = 0.5) +
     labs(
       x = "Formulation",
@@ -639,8 +677,19 @@ plot_bootstrap_results <- function(bootstrap_results, output_dir = "figures_v2",
     theme_classic(base_size = 12) +
     theme(
       axis.text.x = element_text(angle = 45, hjust = 1),
-      panel.grid.major.y = element_line(color = "grey90", linewidth = 0.3)
+      panel.grid.major.y = element_line(color = "grey90", linewidth = 0.3),
+      legend.position = "none"
     )
+
+  if (has_device & has_pressure) {
+    p3 <- p3 + facet_grid(device_resistance ~ pressure_drop,
+                          labeller = labeller(device_resistance = label_both,
+                                            pressure_drop = label_both))
+  } else if (has_device) {
+    p3 <- p3 + facet_wrap(~device_resistance, labeller = label_both)
+  } else if (has_pressure) {
+    p3 <- p3 + facet_wrap(~pressure_drop, labeller = label_both)
+  }
 
   # Combine plots with dynamic sizing
   combined <- (p1 / p2 / p3) +
