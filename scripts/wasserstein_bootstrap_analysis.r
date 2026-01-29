@@ -235,8 +235,12 @@ bootstrap_w1_single <- function(data, formulation, reference_module = "RODOS",
   common_sizes <- sort(unique(c(ref_replicates$size_grid, test_replicates$size_grid)))
 
   # Re-extract with common grid
-  ref_replicates <- get_replicate_cdfs(data, formulation, reference_module, common_sizes)
-  test_replicates <- get_replicate_cdfs(data, formulation, test_module, common_sizes)
+  ref_replicates <- get_replicate_cdfs(data, formulation, reference_module,
+                                       common_size_grid = common_sizes)
+  test_replicates <- get_replicate_cdfs(data, formulation, test_module,
+                                        device_resistance = device_resistance,
+                                        pressure_drop = pressure_drop,
+                                        common_size_grid = common_sizes)
 
   # Calculate observed W1 from normally pooled data (average of all replicates)
   ref_pooled_observed <- Reduce("+", ref_replicates$cdfs) / length(ref_replicates$cdfs)
