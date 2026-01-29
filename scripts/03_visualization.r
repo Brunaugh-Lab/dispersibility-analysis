@@ -19,6 +19,32 @@
 #   - create_publication_panel() - Combined multi-panel figure
 #   - plot_psd_density() - Density distributions
 #
+# - **NEW**: 4 factor-faceted plotting functions for simplified comparisons
+# - Creates publication-ready PDFs with dynamic sizing
+# - Auto-detects experimental design (devices × pressures × formulations)
+
+# **New Plot Types:**
+# - `CDF_by_device.pdf` - All formulations compared across device resistance levels
+# - `CDF_by_pressure.pdf` - All formulations compared across pressure drop levels
+# - `W1_by_device.pdf` - Dispersibility metrics faceted by device resistance
+# - `W1_by_pressure.pdf` - Dispersibility metrics faceted by pressure drop
+
+# **Features:**
+# - Flexible design: Works with any n×m experimental design
+# - Smart sorting: Natural ordering of factors (low→med→high, numeric pressures)
+# - Dynamic sizing: Plot dimensions scale automatically
+# - Publication formatting: Consistent themes, proper axis labels
+# ```
+
+# #### **2b. Update figures_v2/ Directory**
+# The script will create these new files when run:
+# ```
+# figures_v2/
+# ├── CDF_by_device.pdf        ← NEW
+# ├── CDF_by_pressure.pdf      ← NEW
+# ├── W1_by_device.pdf         ← NEW
+# └── W1_by_pressure.pdf       ← NEW
+#
 # Input:
 #   - data_v2/tidy/standardized_data.csv
 #   - results_v2/wasserstein_results.csv
@@ -674,6 +700,8 @@ create_publication_panel <- function(
 
   return(combined)
 }
+
+
 
 # ==============================================================================
 # CONVENIENCE FUNCTION: Generate all standard plots
