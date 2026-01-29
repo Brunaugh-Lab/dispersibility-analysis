@@ -187,14 +187,17 @@ if (length(inhaler_files) > 0) {
   # Join metadata with data
   inhaler_combined <- inhaler_data %>%
     left_join(inhaler_metadata, by = "source_file")
-
-  # DEBUG: Check column names after joining
-  if (verbose) {
-    cat("DEBUG: INHALER columns after joining:\n")
-    cat(paste(names(inhaler_combined), collapse = ", "), "\n\n")
-  }
 } else {
   inhaler_combined <- tibble()
+}
+# Join metadata with data
+inhaler_combined <- inhaler_data %>%
+  left_join(inhaler_metadata, by = "source_file")
+
+# DEBUG: Check column names after joining
+if (verbose && nrow(inhaler_combined) > 0) {
+  cat("DEBUG: INHALER columns after joining:\n")
+  cat(paste(names(inhaler_combined), collapse = ", "), "\n\n")
 }
 
 # Read RODOS files normally (no metadata in CSV)
@@ -204,27 +207,14 @@ if (length(rodos_files) > 0) {
     id = "source_file",
     skip = skip_rows,
     col_types = cols(.default = "c"),
-    show_col_types = FALSE,
-    name_repair = ~str_replace_all(., "µ", "u")  # Fix µ symbol
+    show_col_types = FALSE
   ) %>%
     clean_names()
 } else {
   rodos_combined <- tibble()
 }
 
-# Select only essential columns before combining (INHALER has many extra metadata columns)
-if (nrow(inhaler_combined) > 0) {
-  inhaler_combined <- inhaler_combined %>%
-    select(source_file, xo_mm, q3_percent,
-           formulation_id, Device, pressure_drop, `pressure-drop`, Time)
-}
-
-if (nrow(rodos_combined) > 0) {
-  rodos_combined <- rodos_combined %>%
-    select(source_file, xo_mm, q3_percent)
-}
-
-# Combine INHALER and RODOS data (now they have compatible columns)
+# Combine INHALER and RODOS data
 combined_data <- bind_rows(inhaler_combined, rodos_combined) %>%
   mutate(
     # Convert size and cumulative distribution to numeric
