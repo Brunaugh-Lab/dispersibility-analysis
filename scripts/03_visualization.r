@@ -897,7 +897,8 @@ plot_cdf_by_pressure <- function(
     scale_linetype_manual(
       values = device_linetypes,
       name = "Device Resistance",
-      labels = str_to_title(str_replace_all(names(device_linetypes), "_", " "))
+      labels = str_to_title(str_replace_all(names(device_linetypes), "_", " ")),
+      guide = guide_legend(override.aes = list(linewidth = 1.5))
     ) +
     labs(
       x = "Particle Size (µm)",
