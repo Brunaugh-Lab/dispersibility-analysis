@@ -774,7 +774,7 @@ plot_cdf_by_device <- function(
       labels = str_replace(names(pressure_linetypes), "_", " "),
       guide = guide_legend(
         override.aes = list(linewidth = 1.2),
-        keywidth = unit(3, "cm")
+        keywidth = unit(2, "cm")
       )
     ) +
     labs(
@@ -923,7 +923,7 @@ plot_cdf_by_pressure <- function(
       labels = str_to_title(str_replace_all(names(device_linetypes), "_", " ")),
       guide = guide_legend(
         override.aes = list(linewidth = 1.2),
-        keywidth = unit(3, "cm")
+        keywidth = unit(2, "cm")
       )
     ) +
     labs(
