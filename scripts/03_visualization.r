@@ -757,6 +757,40 @@ generate_all_plots <- function(
     width = 10,
     height = 6
   )
+  # NEW: Factor-faceted plots
+  if (verbose) cat("Creating CDF plot faceted by device...\n")
+  p_cdf_device <- plot_cdf_by_device(
+    data,
+    reference_module = reference_module,
+    test_module = test_module,
+    output_dir = output_dir,
+    verbose = verbose
+  )
+
+  if (verbose) cat("Creating CDF plot faceted by pressure...\n")
+  p_cdf_pressure <- plot_cdf_by_pressure(
+    data,
+    reference_module = reference_module,
+    test_module = test_module,
+    output_dir = output_dir,
+    verbose = verbose
+  )
+
+  if (verbose) cat("Creating W1 plot faceted by device...\n")
+  p_w1_device <- plot_w1_by_device(
+    w1_results,
+    metric = "W1_micrometers",
+    output_dir = output_dir,
+    verbose = verbose
+  )
+
+  if (verbose) cat("Creating W1 plot faceted by pressure...\n")
+  p_w1_pressure <- plot_w1_by_pressure(
+    w1_results,
+    metric = "W1_micrometers",
+    output_dir = output_dir,
+    verbose = verbose
+  )
 
   if (verbose) {
     cat("------------------------------------------------------------------------\n")
