@@ -422,7 +422,7 @@ calculate_effect_noise_ratios <- function(bootstrap_results,
     cat("Analyzing: Formulation, Device, and Pressure effects\n")
   }
 
-  # ============================================================================
+    # ============================================================================
   # 1. FORMULATION EFFECT: Variability across formulations
   # ============================================================================
   formulation_effect <- bootstrap_results %>%
@@ -452,58 +452,78 @@ calculate_effect_noise_ratios <- function(bootstrap_results,
   # ============================================================================
   # 2. DEVICE RESISTANCE EFFECT: Variability across device levels
   # ============================================================================
-  device_effect <- bootstrap_results %>%
-    group_by(formulation, pressure_drop) %>%
-    summarise(
-      effect_size = max(w1_mean, na.rm = TRUE) - min(w1_mean, na.rm = TRUE),
-      avg_noise = mean(w1_sd, na.rm = TRUE),
-      .groups = 'drop'
-    ) %>%
-    summarise(
-      effect_magnitude_um = mean(effect_size, na.rm = TRUE),
-      noise_level_um = mean(avg_noise, na.rm = TRUE),
-      .groups = 'drop'
-    ) %>%
-    mutate(
-      factor_type = "device_resistance",
-      effect_to_noise_ratio = effect_magnitude_um / noise_level_um,
-      n_levels = n_distinct(bootstrap_results$device_resistance, na.rm = TRUE),
-      interpretation = case_when(
-        effect_to_noise_ratio >= 3 ~ "Strong device effect: Differences >> measurement noise",
-        effect_to_noise_ratio >= 2 ~ "Moderate device effect: Differences > measurement noise",
-        effect_to_noise_ratio >= 1 ~ "Weak device effect: Differences ~ measurement noise",
-        TRUE ~ "Poor device signal: Differences < measurement noise"
+  # Only calculate if device_resistance column exists AND has >1 unique level
+  if ("device_resistance" %in% names(bootstrap_results) &&
+      n_distinct(bootstrap_results$device_resistance, na.rm = TRUE) > 1) {
+
+    device_effect <- bootstrap_results %>%
+      group_by(formulation, pressure_drop) %>%
+      summarise(
+        effect_size = max(w1_mean, na.rm = TRUE) - min(w1_mean, na.rm = TRUE),
+        avg_noise = mean(w1_sd, na.rm = TRUE),
+        .groups = 'drop'
+      ) %>%
+      summarise(
+        effect_magnitude_um = mean(effect_size, na.rm = TRUE),
+        noise_level_um = mean(avg_noise, na.rm = TRUE),
+        .groups = 'drop'
+      ) %>%
+      mutate(
+        factor_type = "device_resistance",
+        effect_to_noise_ratio = effect_magnitude_um / noise_level_um,
+        n_levels = n_distinct(bootstrap_results$device_resistance, na.rm = TRUE),
+        interpretation = case_when(
+          effect_to_noise_ratio >= 3 ~ "Strong device effect: Differences >> measurement noise",
+          effect_to_noise_ratio >= 2 ~ "Moderate device effect: Differences > measurement noise",
+          effect_to_noise_ratio >= 1 ~ "Weak device effect: Differences ~ measurement noise",
+          TRUE ~ "Poor device signal: Differences < measurement noise"
+        )
       )
-    )
+  } else {
+    device_effect <- NULL
+    if (verbose) {
+      cat("  Note: Device resistance effect not calculated (only 1 level or column missing)\n")
+    }
+  }
 
   # ============================================================================
   # 3. PRESSURE DROP EFFECT: Variability across pressure levels
   # ============================================================================
-  pressure_effect <- bootstrap_results %>%
-    group_by(formulation, device_resistance) %>%
-    summarise(
-      effect_size = max(w1_mean, na.rm = TRUE) - min(w1_mean, na.rm = TRUE),
-      avg_noise = mean(w1_sd, na.rm = TRUE),
-      .groups = 'drop'
-    ) %>%
-    summarise(
-      effect_magnitude_um = mean(effect_size, na.rm = TRUE),
-      noise_level_um = mean(avg_noise, na.rm = TRUE),
-      .groups = 'drop'
-    ) %>%
-    mutate(
-      factor_type = "pressure_drop",
-      effect_to_noise_ratio = effect_magnitude_um / noise_level_um,
-      n_levels = n_distinct(bootstrap_results$pressure_drop, na.rm = TRUE),
-      interpretation = case_when(
-        effect_to_noise_ratio >= 3 ~ "Strong pressure effect: Differences >> measurement noise",
-        effect_to_noise_ratio >= 2 ~ "Moderate pressure effect: Differences > measurement noise",
-        effect_to_noise_ratio >= 1 ~ "Weak pressure effect: Differences ~ measurement noise",
-        TRUE ~ "Poor pressure signal: Differences < measurement noise"
-      )
-    )
+  # Only calculate if pressure_drop column exists AND has >1 unique level
+  if ("pressure_drop" %in% names(bootstrap_results) &&
+      n_distinct(bootstrap_results$pressure_drop, na.rm = TRUE) > 1) {
 
-  # Combine all effect-to-noise ratios
+    pressure_effect <- bootstrap_results %>%
+      group_by(formulation, device_resistance) %>%
+      summarise(
+        effect_size = max(w1_mean, na.rm = TRUE) - min(w1_mean, na.rm = TRUE),
+        avg_noise = mean(w1_sd, na.rm = TRUE),
+        .groups = 'drop'
+      ) %>%
+      summarise(
+        effect_magnitude_um = mean(effect_size, na.rm = TRUE),
+        noise_level_um = mean(avg_noise, na.rm = TRUE),
+        .groups = 'drop'
+      ) %>%
+      mutate(
+        factor_type = "pressure_drop",
+        effect_to_noise_ratio = effect_magnitude_um / noise_level_um,
+        n_levels = n_distinct(bootstrap_results$pressure_drop, na.rm = TRUE),
+        interpretation = case_when(
+          effect_to_noise_ratio >= 3 ~ "Strong pressure effect: Differences >> measurement noise",
+          effect_to_noise_ratio >= 2 ~ "Moderate pressure effect: Differences > measurement noise",
+          effect_to_noise_ratio >= 1 ~ "Weak pressure effect: Differences ~ measurement noise",
+          TRUE ~ "Poor pressure signal: Differences < measurement noise"
+        )
+      )
+  } else {
+    pressure_effect <- NULL
+    if (verbose) {
+      cat("  Note: Pressure drop effect not calculated (only 1 level or column missing)\n")
+    }
+  }
+
+  # Combine all effect-to-noise ratios (only include non-NULL)
   ratio_results <- bind_rows(
     formulation_effect,
     device_effect,
