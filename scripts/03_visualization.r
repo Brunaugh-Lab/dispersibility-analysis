@@ -877,11 +877,7 @@ plot_cdf_by_pressure <- function(
   if (is.null(height)) height <- 6
 
   p <- ggplot() +
-    # RODOS reference
-    geom_line(data = rodos_summary,
-              aes(x = particle_size_um, y = q3_percent_mean, color = formulation),
-              linewidth = 1.2, linetype = "solid") +
-    # INHALER data
+    # INHALER data only
     geom_line(data = inhaler_summary,
               aes(x = particle_size_um, y = q3_percent_mean,
                   color = formulation, linetype = device_resistance),
