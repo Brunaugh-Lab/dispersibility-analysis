@@ -767,7 +767,7 @@ plot_cdf_by_device <- function(
     labs(
       x = "Particle Size (µm)",
       y = expression("Cumulative Distribution " * Q[3] * " (%)"),
-      title = paste0(test_module, " vs ", reference_module, " by Device Resistance")
+      title = paste0(test_module, " Dispersibility by Device Resistance")
     ) +
     theme_classic(base_size = 14) +
     theme(
@@ -903,7 +903,7 @@ plot_cdf_by_pressure <- function(
     labs(
       x = "Particle Size (µm)",
       y = expression("Cumulative Distribution " * Q[3] * " (%)"),
-      title = paste0(test_module, " vs ", reference_module, " by Pressure Drop")
+      title = paste0(test_module, " Dispersibility by Pressure Drop")
     ) +
     theme_classic(base_size = 14) +
     theme(
