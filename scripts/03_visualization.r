@@ -761,7 +761,8 @@ plot_cdf_by_device <- function(
     scale_linetype_manual(
       values = pressure_linetypes,
       name = "Device Pressure Drop",
-      labels = str_replace(names(pressure_linetypes), "_", " ")
+      labels = str_replace(names(pressure_linetypes), "_", " "),
+      guide = guide_legend(override.aes = list(linewidth = 1.5))
     ) +
     labs(
       x = "Particle Size (µm)",
