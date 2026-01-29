@@ -184,24 +184,36 @@ bootstrap_pool_replicates <- function(replicate_cdfs_info, n_replicates = NULL) 
 #'   - bootstrap_samples: List column with all W1 values
 #'
 bootstrap_w1_single <- function(data, formulation, reference_module = "RODOS",
-                               test_module = "INHALER", device_resistance = NULL,
-                              pressure_drop = NULL, n_bootstrap = 2000,
+                               test_module = "INHALER",
+                               device_resistance = NULL,
+                               pressure_drop = NULL,
+                               n_bootstrap = 2000,
                                seed = NULL, verbose = TRUE) {
 
   if (!is.null(seed)) set.seed(seed)
 
   if (verbose) {
-    cat(sprintf("Bootstrap resampling: %s (%d iterations)\n", formulation, n_bootstrap))
+    condition_label <- paste(
+      formulation,
+      if (!is.null(device_resistance)) paste0("Device:", device_resistance) else "",
+      if (!is.null(pressure_drop)) paste0("Pressure:", pressure_drop) else ""
+    )
+    cat(sprintf("Bootstrap resampling: %s (%d iterations)\n", condition_label, n_bootstrap))
   }
 
   # Load calculate_wasserstein_1d function from script 02
   if (!exists("calculate_wasserstein_1d")) {
-    source("/mnt/user-data/uploads/02_wasserstein_core.r", local = TRUE)
+    source("scripts/02_wasserstein_core.R", local = TRUE)
   }
 
   # Get individual replicate CDFs for both conditions
+  # RODOS has no device/pressure factors - pool all replicates
   ref_replicates <- get_replicate_cdfs(data, formulation, reference_module)
-  test_replicates <- get_replicate_cdfs(data, formulation, test_module, device_resistance = device_resistance, pressure_drop = pressure_drop)
+
+  # INHALER filtered by device and pressure
+  test_replicates <- get_replicate_cdfs(data, formulation, test_module,
+                                        device_resistance = device_resistance,
+                                        pressure_drop = pressure_drop)
 
   # Check that we have data for both conditions
   if (length(ref_replicates$cdfs) == 0 || length(test_replicates$cdfs) == 0) {
@@ -250,17 +262,17 @@ bootstrap_w1_single <- function(data, formulation, reference_module = "RODOS",
   w1_sd <- sd(w1_bootstrap, na.rm = TRUE)
   w1_ci <- quantile(w1_bootstrap, c(0.025, 0.975), na.rm = TRUE)
 
-  # Return results
-  tibble(
+  # Return bootstrap results
+  return(tibble(
     formulation = formulation,
-    w1_mean = w1_mean,
-    w1_sd = w1_sd,
-    w1_ci_lower = w1_ci[[1]],
-    w1_ci_upper = w1_ci[[2]],
+    device_resistance = device_resistance %||% NA_character_,
+    pressure_drop = pressure_drop %||% NA_character_,
+    w1_mean = mean(w1_bootstrap, na.rm = TRUE),
+    w1_sd = sd(w1_bootstrap, na.rm = TRUE),
+    w1_ci_lower = quantile(w1_bootstrap, 0.025, na.rm = TRUE),
+    w1_ci_upper = quantile(w1_bootstrap, 0.975, na.rm = TRUE),
     w1_observed = w1_observed,
     n_bootstrap = n_bootstrap,
-    n_ref_replicates = length(ref_replicates$cdfs),
-    n_test_replicates = length(test_replicates$cdfs),
     bootstrap_samples = list(w1_bootstrap)
   )
 }
@@ -312,22 +324,29 @@ bootstrap_w1_analysis <- function(data, reference_module = "RODOS",
     cat("------------------------------------------------------------------------\n\n")
   }
 
-  # Get unique formulations
-  formulations <- unique(data$formulation)
-  n_formulations <- length(formulations)
+  # Get all unique combinations of formulation × device × pressure
+  test_conditions <- data %>%
+    filter(module == test_module) %>%
+    distinct(formulation, device_resistance, pressure_drop_clean)
+
+  n_formulations <- n_distinct(test_conditions$formulation)
+  n_conditions <- nrow(test_conditions)
 
   if (verbose) {
     cat("Formulations to process:", n_formulations, "\n")
-    cat("Total bootstrap samples:", n_formulations * n_bootstrap, "\n\n")
+    cat("Total conditions (formulation × device × pressure):", n_conditions, "\n")
+    cat("Total bootstrap samples:", n_conditions * n_bootstrap, "\n\n")
   }
 
-  # Run bootstrap analysis for each formulation
-  bootstrap_results <- map_dfr(formulations, function(form) {
+  # Run bootstrap analysis for each condition combination
+  bootstrap_results <- pmap_dfr(test_conditions, function(formulation, device_resistance, pressure_drop_clean) {
     bootstrap_w1_single(
       data = data,
-      formulation = form,
+      formulation = formulation,
       reference_module = reference_module,
       test_module = test_module,
+      device_resistance = device_resistance,
+      pressure_drop = pressure_drop_clean,
       n_bootstrap = n_bootstrap,
       seed = seed,
       verbose = verbose
@@ -391,7 +410,7 @@ bootstrap_w1_analysis <- function(data, reference_module = "RODOS",
 #' @return Tibble with effect-to-noise ratio
 #'
 calculate_effect_noise_ratios <- function(bootstrap_results,
-                                         output_dir = "results",
+                                         output_dir = "results_v2",
                                          save_output = TRUE,
                                          output_filename = "effect_noise_ratios.csv",
                                          verbose = TRUE) {
@@ -400,62 +419,120 @@ calculate_effect_noise_ratios <- function(bootstrap_results,
     cat("\n========================================================================\n")
     cat("EFFECT-TO-NOISE RATIO ANALYSIS\n")
     cat("========================================================================\n")
-    cat("Analysis: Overall formulation variability vs measurement uncertainty\n")
+    cat("Analyzing: Formulation, Device, and Pressure effects\n")
   }
 
-  # Calculate effect magnitude (between-formulation variability)
-  effect_magnitude <- sd(bootstrap_results$w1_observed, na.rm = TRUE)
+  # ============================================================================
+  # 1. FORMULATION EFFECT: Variability across formulations
+  # ============================================================================
+  formulation_effect <- bootstrap_results %>%
+    group_by(device_resistance, pressure_drop) %>%
+    summarise(
+      effect_size = sd(w1_mean, na.rm = TRUE),
+      avg_noise = mean(w1_sd, na.rm = TRUE),
+      .groups = 'drop'
+    ) %>%
+    summarise(
+      effect_magnitude_um = mean(effect_size, na.rm = TRUE),
+      noise_level_um = mean(avg_noise, na.rm = TRUE),
+      .groups = 'drop'
+    ) %>%
+    mutate(
+      factor_type = "formulation",
+      effect_to_noise_ratio = effect_magnitude_um / noise_level_um,
+      n_levels = n_distinct(bootstrap_results$formulation),
+      interpretation = case_when(
+        effect_to_noise_ratio >= 3 ~ "Strong formulation effect: Differences >> measurement noise",
+        effect_to_noise_ratio >= 2 ~ "Moderate formulation effect: Differences > measurement noise",
+        effect_to_noise_ratio >= 1 ~ "Weak formulation effect: Differences ~ measurement noise",
+        TRUE ~ "Poor formulation signal: Differences < measurement noise"
+      )
+    )
 
-  # Calculate noise level (average measurement uncertainty)
-  noise_level <- mean(bootstrap_results$w1_sd, na.rm = TRUE)
+  # ============================================================================
+  # 2. DEVICE RESISTANCE EFFECT: Variability across device levels
+  # ============================================================================
+  device_effect <- bootstrap_results %>%
+    group_by(formulation, pressure_drop) %>%
+    summarise(
+      effect_size = max(w1_mean, na.rm = TRUE) - min(w1_mean, na.rm = TRUE),
+      avg_noise = mean(w1_sd, na.rm = TRUE),
+      .groups = 'drop'
+    ) %>%
+    summarise(
+      effect_magnitude_um = mean(effect_size, na.rm = TRUE),
+      noise_level_um = mean(avg_noise, na.rm = TRUE),
+      .groups = 'drop'
+    ) %>%
+    mutate(
+      factor_type = "device_resistance",
+      effect_to_noise_ratio = effect_magnitude_um / noise_level_um,
+      n_levels = n_distinct(bootstrap_results$device_resistance, na.rm = TRUE),
+      interpretation = case_when(
+        effect_to_noise_ratio >= 3 ~ "Strong device effect: Differences >> measurement noise",
+        effect_to_noise_ratio >= 2 ~ "Moderate device effect: Differences > measurement noise",
+        effect_to_noise_ratio >= 1 ~ "Weak device effect: Differences ~ measurement noise",
+        TRUE ~ "Poor device signal: Differences < measurement noise"
+      )
+    )
 
-  # Calculate ratio
-  effect_to_noise_ratio <- effect_magnitude / noise_level
+  # ============================================================================
+  # 3. PRESSURE DROP EFFECT: Variability across pressure levels
+  # ============================================================================
+  pressure_effect <- bootstrap_results %>%
+    group_by(formulation, device_resistance) %>%
+    summarise(
+      effect_size = max(w1_mean, na.rm = TRUE) - min(w1_mean, na.rm = TRUE),
+      avg_noise = mean(w1_sd, na.rm = TRUE),
+      .groups = 'drop'
+    ) %>%
+    summarise(
+      effect_magnitude_um = mean(effect_size, na.rm = TRUE),
+      noise_level_um = mean(avg_noise, na.rm = TRUE),
+      .groups = 'drop'
+    ) %>%
+    mutate(
+      factor_type = "pressure_drop",
+      effect_to_noise_ratio = effect_magnitude_um / noise_level_um,
+      n_levels = n_distinct(bootstrap_results$pressure_drop, na.rm = TRUE),
+      interpretation = case_when(
+        effect_to_noise_ratio >= 3 ~ "Strong pressure effect: Differences >> measurement noise",
+        effect_to_noise_ratio >= 2 ~ "Moderate pressure effect: Differences > measurement noise",
+        effect_to_noise_ratio >= 1 ~ "Weak pressure effect: Differences ~ measurement noise",
+        TRUE ~ "Poor pressure signal: Differences < measurement noise"
+      )
+    )
 
-  # Create results
-  ratio_results <- tibble(
-    analysis_type = "overall_formulation_variability",
-    effect_magnitude_um = effect_magnitude,
-    noise_level_um = noise_level,
-    effect_to_noise_ratio = effect_to_noise_ratio,
-    n_formulations = nrow(bootstrap_results),
-    interpretation = case_when(
-      effect_to_noise_ratio >= 3 ~ "Strong signal: Formulation differences >> measurement noise",
-      effect_to_noise_ratio >= 2 ~ "Moderate signal: Formulation differences > measurement noise",
-      effect_to_noise_ratio >= 1 ~ "Weak signal: Formulation differences ~ measurement noise",
-      TRUE ~ "Poor signal: Formulation differences < measurement noise"
-    ),
-    # Additional metrics
-    mean_w1_um = mean(bootstrap_results$w1_observed, na.rm = TRUE),
-    min_w1_um = min(bootstrap_results$w1_observed, na.rm = TRUE),
-    max_w1_um = max(bootstrap_results$w1_observed, na.rm = TRUE),
-    cv_between_formulations = effect_magnitude / mean(bootstrap_results$w1_observed, na.rm = TRUE),
-    mean_relative_uncertainty = mean(bootstrap_results$w1_sd / bootstrap_results$w1_observed, na.rm = TRUE)
+  # Combine all effect-to-noise ratios
+  ratio_results <- bind_rows(
+    formulation_effect,
+    device_effect,
+    pressure_effect
   )
 
   if (verbose) {
-    cat("\nRESULTS:\n")
-    cat(sprintf("  Effect magnitude (between-formulation SD): %.4f µm\n", effect_magnitude))
-    cat(sprintf("  Noise level (mean bootstrap SE): %.4f µm\n", noise_level))
-    cat(sprintf("  Effect-to-noise ratio: %.2f\n", effect_to_noise_ratio))
-    cat(sprintf("  Number of formulations: %d\n", nrow(bootstrap_results)))
-    cat("\nINTERPRETATION:\n")
-    cat(sprintf("  %s\n", ratio_results$interpretation))
-    cat("\nADDITIONAL METRICS:\n")
-    cat(sprintf("  W1 range: %.4f - %.4f µm (mean: %.4f µm)\n",
-                ratio_results$min_w1_um, ratio_results$max_w1_um, ratio_results$mean_w1_um))
-    cat(sprintf("  CV between formulations: %.1f%%\n", 100 * ratio_results$cv_between_formulations))
-    cat(sprintf("  Mean relative uncertainty: %.1f%%\n", 100 * ratio_results$mean_relative_uncertainty))
+    cat("------------------------------------------------------------------------\n")
+    cat("Effect-to-Noise Ratios:\n")
+    for (i in 1:nrow(ratio_results)) {
+      cat(sprintf("  %s: %.2f (%s)\n",
+                  str_to_title(ratio_results$factor_type[i]),
+                  ratio_results$effect_to_noise_ratio[i],
+                  ratio_results$interpretation[i]))
+    }
     cat("------------------------------------------------------------------------\n")
   }
 
   # Save results
   if (save_output) {
+    if (!dir.exists(output_dir)) {
+      dir.create(output_dir, recursive = TRUE)
+    }
+
     output_path <- file.path(output_dir, output_filename)
     write_csv(ratio_results, output_path)
 
     if (verbose) {
-      cat("✓ Effect-to-noise ratio saved to:", output_path, "\n")
+      cat("✓ Effect-to-noise ratios saved to:", output_path, "\n")
     }
   }
 
@@ -477,7 +554,7 @@ calculate_effect_noise_ratios <- function(bootstrap_results,
 #'
 #' @return List of ggplot objects
 #'
-plot_bootstrap_results <- function(bootstrap_results, output_dir = "figures",
+plot_bootstrap_results <- function(bootstrap_results, output_dir = "figures_v2",
                                   save_plots = TRUE, verbose = TRUE) {
 
   library(ggplot2)
@@ -582,7 +659,7 @@ plot_bootstrap_results <- function(bootstrap_results, output_dir = "figures",
 #' @return List of ggplot objects
 #'
 plot_effect_noise_analysis <- function(bootstrap_results, effect_noise_results,
-                                      output_dir = "figures", save_plots = TRUE,
+                                      output_dir = "figures_v2", save_plots = TRUE,
                                       verbose = TRUE) {
 
   library(ggplot2)
@@ -743,7 +820,7 @@ run_bootstrap_analysis <- function(data_file = NULL, n_bootstrap = 2000,
 
   # Load data
   if (is.null(data_file)) {
-    data_file <- "data/tidy/standardized_data.csv"
+    data_file <- "data_v2/tidy/standardized_data_with_conditions.csv"
   }
 
   if (!file.exists(data_file)) {
@@ -791,10 +868,10 @@ run_bootstrap_analysis <- function(data_file = NULL, n_bootstrap = 2000,
     cat("BOOTSTRAP ANALYSIS COMPLETE\n")
     cat("========================================================================\n")
     cat("Files created:\n")
-    cat("  - results/bootstrap_results.csv\n")
-    cat("  - results/effect_noise_ratios.csv\n")
-    cat("  - figures/bootstrap_analysis.pdf\n")
-    cat("  - figures/effect_noise_analysis.pdf\n")
+    cat("  - results_v2/bootstrap_results.csv\n")
+    cat("  - results_v2/effect_noise_ratios.csv\n")
+    cat("  - figures_v2/bootstrap_analysis.pdf\n")
+    cat("  - figures_v2/effect_noise_analysis.pdf\n")
     cat("------------------------------------------------------------------------\n")
     cat("Bootstrap summary:\n")
     cat(sprintf("  %d formulations analyzed\n", nrow(bootstrap_results)))
@@ -828,14 +905,14 @@ run_bootstrap_analysis <- function(data_file = NULL, n_bootstrap = 2000,
 # ==============================================================================
 
 # Check if processed data exists
-if (file.exists("data/tidy/standardized_data.csv")) {
+if (file.exists("data_v2/tidy/standardized_data_with_conditions.csv")) {
 
   cat("\n========================================================================\n")
   cat("AUTO-RUNNING BOOTSTRAP ANALYSIS\n")
   cat("========================================================================\n")
-  cat("Reading: data/tidy/standardized_data.csv\n")
+  cat("Reading: data_v2/tidy/standardized_data_with_conditions.csv\n")
   cat("Bootstrap iterations: 2000 per formulation\n")
-  cat("Saving to: results/bootstrap_results.csv\n")
+  cat("Saving to: results_v2/bootstrap_results.csv\n")
   cat("------------------------------------------------------------------------\n")
 
   # Run the complete analysis
@@ -860,7 +937,7 @@ if (file.exists("data/tidy/standardized_data.csv")) {
   cat("\n========================================================================\n")
   cat("BOOTSTRAP ANALYSIS - WAITING FOR INPUT DATA\n")
   cat("========================================================================\n")
-  cat("Standardized data not found: data/tidy/standardized_data.csv\n")
+  cat("Standardized data not found: data_v2/tidy/standardized_data_with_conditions.csv\n")
   cat("\nPlease run the data processing pipeline first:\n")
   cat("  source('scripts/01_data_import.R')\n")
   cat("  source('scripts/02_wasserstein_core.R')\n")
