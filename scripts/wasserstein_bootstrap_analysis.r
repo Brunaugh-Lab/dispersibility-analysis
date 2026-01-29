@@ -712,29 +712,34 @@ plot_effect_noise_analysis <- function(bootstrap_results, effect_noise_results,
       panel.grid.major.y = element_line(color = "grey90", linewidth = 0.3)
     )
 
-  # Plot 2: Effect vs Noise comparison
-  effect_mag <- effect_noise_results$effect_magnitude_um
-  noise_level <- effect_noise_results$noise_level_um
-  ratio <- effect_noise_results$effect_to_noise_ratio
-
-  p2 <- tibble(
-    metric = c("Formulation\nVariability\n(Effect)", "Measurement\nUncertainty\n(Noise)"),
-    value = c(effect_mag, noise_level),
-    color = c("Effect", "Noise")
-  ) %>%
-    ggplot(aes(x = metric, y = value, fill = color)) +
-    geom_col(alpha = 0.8, width = 0.6) +
-    geom_text(aes(label = sprintf("%.4f µm", value)),
-              vjust = -0.5, size = 4, fontface = "bold") +
+  # Plot 2: Effect vs Noise comparison (now shows all 3 factors)
+  p2 <- effect_noise_results %>%
+    mutate(
+      effect_label = paste0(str_to_title(factor_type), "\nEffect"),
+      noise_label = paste0(str_to_title(factor_type), "\nNoise")
+    ) %>%
+    pivot_longer(
+      cols = c(effect_magnitude_um, noise_level_um),
+      names_to = "metric_type",
+      values_to = "value"
+    ) %>%
+    mutate(
+      metric = if_else(metric_type == "effect_magnitude_um", effect_label, noise_label),
+      color = if_else(metric_type == "effect_magnitude_um", "Effect", "Noise")
+    ) %>%
+    ggplot(aes(x = factor_type, y = value, fill = color)) +
+    geom_col(alpha = 0.8, width = 0.6, position = "dodge") +
+    geom_text(aes(label = sprintf("%.3f", value)),
+              position = position_dodge(width = 0.6),
+              vjust = -0.5, size = 3.5) +
     scale_fill_manual(
       values = c("Effect" = "darkgreen", "Noise" = "orange"),
-      guide = "none"
+      name = "Metric Type"
     ) +
     labs(
-      x = "",
+      x = "Factor",
       y = "Standard Deviation (µm)",
-      title = sprintf("Effect-to-Noise Ratio = %.2f", ratio),
-      subtitle = effect_noise_results$interpretation
+      title = "Effect vs Noise Comparison by Factor"
     ) +
     theme_classic(base_size = 12) +
     theme(
@@ -763,26 +768,25 @@ plot_effect_noise_analysis <- function(bootstrap_results, effect_noise_results,
       panel.grid.major.y = element_line(color = "grey90", linewidth = 0.3)
     )
 
-  # Plot 4: Signal strength interpretation
-  interpretation_color <- case_when(
-    ratio >= 3 ~ "darkgreen",
-    ratio >= 2 ~ "orange",
-    ratio >= 1 ~ "gold",
-    TRUE ~ "red"
-  )
-
-  p4 <- tibble(
-    x = 1, y = 1,
-    ratio = ratio,
-    interpretation = effect_noise_results$interpretation
-  ) %>%
+  # Plot 4: Signal strength interpretation (faceted by factor)
+  p4 <- effect_noise_results %>%
+    mutate(
+      interpretation_color = case_when(
+        effect_to_noise_ratio >= 3 ~ "darkgreen",
+        effect_to_noise_ratio >= 2 ~ "orange",
+        effect_to_noise_ratio >= 1 ~ "gold",
+        TRUE ~ "red"
+      ),
+      x = 1, y = 1
+    ) %>%
     ggplot(aes(x, y)) +
-    geom_point(size = 50, color = interpretation_color, alpha = 0.8) +
-    geom_text(aes(label = sprintf("%.2f", ratio)),
-              size = 8, fontface = "bold", color = "white") +
+    geom_point(aes(color = interpretation_color), size = 30, alpha = 0.8) +
+    geom_text(aes(label = sprintf("%.2f", effect_to_noise_ratio)),
+              size = 6, fontface = "bold", color = "white") +
+    scale_color_identity() +
+    facet_wrap(~factor_type, ncol = 3) +
     labs(
-      title = "Signal Strength Assessment",
-      subtitle = str_wrap(effect_noise_results$interpretation, 40)
+      title = "Signal Strength Assessment by Factor"
     ) +
     theme_void() +
     theme(
