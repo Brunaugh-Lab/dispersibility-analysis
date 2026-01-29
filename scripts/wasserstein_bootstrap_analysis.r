@@ -724,6 +724,7 @@ plot_bootstrap_results <- function(bootstrap_results, output_dir = "figures_v2",
     if (verbose) {
       cat("✓ Bootstrap plots saved to:", output_path, "\n")
     }
+  }  # <-- ADD THIS CLOSING BRACE
 
   return(plots)
 }
