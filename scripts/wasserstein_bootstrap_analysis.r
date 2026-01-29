@@ -712,11 +712,16 @@ plot_effect_noise_analysis <- function(bootstrap_results, effect_noise_results,
       panel.grid.major.y = element_line(color = "grey90", linewidth = 0.3)
     )
 
-  # Plot 2: Effect vs Noise comparison (now shows all 3 factors)
+  # Plot 2: Effect vs Noise comparison - improved bar chart
   p2 <- effect_noise_results %>%
     mutate(
-      effect_label = paste0(str_to_title(factor_type), "\nEffect"),
-      noise_label = paste0(str_to_title(factor_type), "\nNoise")
+      factor_label = case_when(
+        factor_type == "formulation" ~ "Formulation",
+        factor_type == "device_resistance" ~ "Device Resistance",
+        factor_type == "pressure_drop" ~ "Pressure Drop",
+        TRUE ~ str_to_title(factor_type)
+      ),
+      factor_label = fct_reorder(factor_label, effect_to_noise_ratio)
     ) %>%
     pivot_longer(
       cols = c(effect_magnitude_um, noise_level_um),
@@ -724,27 +729,27 @@ plot_effect_noise_analysis <- function(bootstrap_results, effect_noise_results,
       values_to = "value"
     ) %>%
     mutate(
-      metric = if_else(metric_type == "effect_magnitude_um", effect_label, noise_label),
-      color = if_else(metric_type == "effect_magnitude_um", "Effect", "Noise")
+      metric_label = if_else(metric_type == "effect_magnitude_um", "Effect Size", "Noise Level")
     ) %>%
-    ggplot(aes(x = factor_type, y = value, fill = color)) +
-    geom_col(alpha = 0.8, width = 0.6, position = "dodge") +
+    ggplot(aes(x = factor_label, y = value, fill = metric_label)) +
+    geom_col(alpha = 0.8, position = position_dodge(width = 0.7), width = 0.6) +
     geom_text(aes(label = sprintf("%.3f", value)),
-              position = position_dodge(width = 0.6),
-              vjust = -0.5, size = 3.5) +
+              position = position_dodge(width = 0.7),
+              vjust = -0.5, size = 3) +
     scale_fill_manual(
-      values = c("Effect" = "darkgreen", "Noise" = "orange"),
-      name = "Metric Type"
+      values = c("Effect Size" = "darkgreen", "Noise Level" = "orange"),
+      name = ""
     ) +
     labs(
       x = "Factor",
-      y = "Standard Deviation (µm)",
-      title = "Effect vs Noise Comparison by Factor"
+      y = "Magnitude (µm)",
+      title = "Effect Size vs Measurement Noise"
     ) +
     theme_classic(base_size = 12) +
     theme(
       panel.grid.major.y = element_line(color = "grey90", linewidth = 0.3),
-      axis.text.x = element_text(size = 11)
+      axis.text.x = element_text(angle = 0, hjust = 0.5),
+      legend.position = "top"
     )
 
   # Plot 3: Relative uncertainty by formulation
