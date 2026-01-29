@@ -741,11 +741,7 @@ plot_cdf_by_device <- function(
   if (is.null(height)) height <- 6
 
   p <- ggplot() +
-    # RODOS reference (same in all panels)
-    geom_line(data = rodos_summary,
-              aes(x = particle_size_um, y = q3_percent_mean, color = formulation),
-              linewidth = 1.2, linetype = "solid") +
-    # INHALER data (varies by device and pressure)
+    # INHALER data only (varies by device and pressure)
     geom_line(data = inhaler_summary,
               aes(x = particle_size_um, y = q3_percent_mean,
                   color = formulation, linetype = pressure_drop_clean),
