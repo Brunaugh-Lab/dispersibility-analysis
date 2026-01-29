@@ -652,6 +652,494 @@ plot_d50_comparison <- function(
 }
 
 # ==============================================================================
+# NEW FUNCTION: Plot CDFs Faceted by Device Resistance (all formulations)
+# ==============================================================================
+
+plot_cdf_by_device <- function(
+    data,
+    reference_module = "RODOS",
+    test_module = "INHALER",
+    formulation_colors = NULL,
+    pressure_linetypes = c("1_kPa" = "dashed", "2_kPa" = "dotdash", "4_kPa" = "solid"),
+    output_dir = "figures_v2",
+    filename = "CDF_by_device.pdf",
+    width = NULL,
+    height = NULL,
+    verbose = TRUE
+) {
+
+  if (!dir.exists(output_dir)) {
+    dir.create(output_dir, recursive = TRUE)
+  }
+
+  # Prepare data
+  plot_data <- data %>%
+    filter(module %in% c(reference_module, test_module))
+
+  # Pool RODOS (add to all device panels)
+  rodos_summary <- plot_data %>%
+    filter(module == reference_module) %>%
+    group_by(formulation, particle_size_um) %>%
+    summarise(
+      q3_percent_mean = mean(q3_percent, na.rm = TRUE),
+      q3_percent_sd = sd(q3_percent, na.rm = TRUE),
+      .groups = 'drop'
+    ) %>%
+    mutate(q3_percent_sd = ifelse(is.na(q3_percent_sd), 0, q3_percent_sd))
+
+  # Pool INHALER by device×pressure
+  inhaler_summary <- plot_data %>%
+    filter(module == test_module) %>%
+    group_by(formulation, device_resistance, pressure_drop_clean, particle_size_um) %>%
+    summarise(
+      q3_percent_mean = mean(q3_percent, na.rm = TRUE),
+      q3_percent_sd = sd(q3_percent, na.rm = TRUE),
+      .groups = 'drop'
+    ) %>%
+    mutate(q3_percent_sd = ifelse(is.na(q3_percent_sd), 0, q3_percent_sd))
+
+  # Auto-detect device levels
+  device_levels <- inhaler_summary %>%
+    distinct(device_resistance) %>%
+    arrange(device_resistance) %>%
+    pull(device_resistance)
+
+  if (all(c("low", "medium", "high") %in% device_levels)) {
+    device_levels <- c("low", "medium", "high")
+  }
+
+  # Auto-detect pressure levels and sort numerically
+  pressure_levels <- inhaler_summary %>%
+    distinct(pressure_drop_clean) %>%
+    mutate(numeric_pressure = as.numeric(str_extract(pressure_drop_clean, "\\d+"))) %>%
+    arrange(numeric_pressure) %>%
+    pull(pressure_drop_clean)
+
+  # Factor levels
+  inhaler_summary <- inhaler_summary %>%
+    mutate(
+      device_resistance = factor(device_resistance, levels = device_levels),
+      pressure_drop_clean = factor(pressure_drop_clean, levels = pressure_levels)
+    )
+
+  # Create device labels
+  device_labels <- setNames(
+    str_to_title(str_replace_all(device_levels, "_", " ")),
+    device_levels
+  )
+
+  # Auto-generate formulation colors if not provided
+  n_formulations <- n_distinct(inhaler_summary$formulation)
+  if (is.null(formulation_colors)) {
+    formulation_colors <- viridis_pal(option = "turbo")(n_formulations)
+    names(formulation_colors) <- sort(unique(inhaler_summary$formulation))
+  }
+
+  # Calculate dimensions
+  n_devices <- length(device_levels)
+  if (is.null(width)) width <- max(12, 4 * n_devices)
+  if (is.null(height)) height <- 6
+
+  p <- ggplot() +
+    # RODOS reference (same in all panels)
+    geom_line(data = rodos_summary,
+              aes(x = particle_size_um, y = q3_percent_mean, color = formulation),
+              linewidth = 1.2, linetype = "solid") +
+    # INHALER data (varies by device and pressure)
+    geom_line(data = inhaler_summary,
+              aes(x = particle_size_um, y = q3_percent_mean,
+                  color = formulation, linetype = pressure_drop_clean),
+              linewidth = 0.8) +
+    facet_wrap(~ device_resistance, nrow = 1,
+               labeller = labeller(device_resistance = device_labels)) +
+    scale_x_log10(
+      limits = c(0.5, 100),
+      breaks = c(0.5, 1, 2, 5, 10, 20, 50, 100),
+      labels = c("0.5", "1", "2", "5", "10", "20", "50", "100")
+    ) +
+    scale_y_continuous(
+      limits = c(0, 100),
+      breaks = seq(0, 100, 25)
+    ) +
+    scale_color_manual(values = formulation_colors, name = "Formulation") +
+    scale_linetype_manual(
+      values = pressure_linetypes,
+      name = "Device Pressure Drop",
+      labels = str_replace(names(pressure_linetypes), "_", " ")
+    ) +
+    labs(
+      x = "Particle Size (µm)",
+      y = expression("Cumulative Distribution " * Q[3] * " (%)"),
+      title = paste0(test_module, " vs ", reference_module, " by Device Resistance")
+    ) +
+    theme_classic(base_size = 14) +
+    theme(
+      panel.grid.major = element_line(color = "grey90", linewidth = 0.3),
+      panel.grid.minor.x = element_line(color = "grey95", linewidth = 0.2),
+      axis.title = element_text(face = "bold"),
+      legend.title = element_text(face = "bold"),
+      legend.position = "bottom",
+      plot.title = element_text(face = "bold", size = 16),
+      strip.background = element_rect(fill = "grey90", color = "black"),
+      strip.text = element_text(face = "bold", size = 12)
+    )
+
+  output_path <- file.path(output_dir, filename)
+  ggsave(output_path, p, width = width, height = height, device = "pdf")
+
+  if (verbose) {
+    cat(sprintf("✓ Saved: %s (%d devices)\n", output_path, n_devices))
+  }
+
+  return(p)
+}
+
+# ==============================================================================
+# NEW FUNCTION: Plot CDFs Faceted by Pressure Drop (all formulations)
+# ==============================================================================
+
+plot_cdf_by_pressure <- function(
+    data,
+    reference_module = "RODOS",
+    test_module = "INHALER",
+    formulation_colors = NULL,
+    device_linetypes = c("low" = "dashed", "medium" = "dotdash", "high" = "solid"),
+    output_dir = "figures_v2",
+    filename = "CDF_by_pressure.pdf",
+    width = NULL,
+    height = NULL,
+    verbose = TRUE
+) {
+
+  if (!dir.exists(output_dir)) {
+    dir.create(output_dir, recursive = TRUE)
+  }
+
+  # Prepare data (same as plot_cdf_by_device)
+  plot_data <- data %>%
+    filter(module %in% c(reference_module, test_module))
+
+  rodos_summary <- plot_data %>%
+    filter(module == reference_module) %>%
+    group_by(formulation, particle_size_um) %>%
+    summarise(
+      q3_percent_mean = mean(q3_percent, na.rm = TRUE),
+      q3_percent_sd = sd(q3_percent, na.rm = TRUE),
+      .groups = 'drop'
+    ) %>%
+    mutate(q3_percent_sd = ifelse(is.na(q3_percent_sd), 0, q3_percent_sd))
+
+  inhaler_summary <- plot_data %>%
+    filter(module == test_module) %>%
+    group_by(formulation, device_resistance, pressure_drop_clean, particle_size_um) %>%
+    summarise(
+      q3_percent_mean = mean(q3_percent, na.rm = TRUE),
+      q3_percent_sd = sd(q3_percent, na.rm = TRUE),
+      .groups = 'drop'
+    ) %>%
+    mutate(q3_percent_sd = ifelse(is.na(q3_percent_sd), 0, q3_percent_sd))
+
+  # Auto-detect levels
+  device_levels <- inhaler_summary %>%
+    distinct(device_resistance) %>%
+    arrange(device_resistance) %>%
+    pull(device_resistance)
+
+  if (all(c("low", "medium", "high") %in% device_levels)) {
+    device_levels <- c("low", "medium", "high")
+  }
+
+  pressure_levels <- inhaler_summary %>%
+    distinct(pressure_drop_clean) %>%
+    mutate(numeric_pressure = as.numeric(str_extract(pressure_drop_clean, "\\d+"))) %>%
+    arrange(numeric_pressure) %>%
+    pull(pressure_drop_clean)
+
+  inhaler_summary <- inhaler_summary %>%
+    mutate(
+      device_resistance = factor(device_resistance, levels = device_levels),
+      pressure_drop_clean = factor(pressure_drop_clean, levels = pressure_levels)
+    )
+
+  # Create pressure labels
+  pressure_labels <- setNames(
+    str_replace(pressure_levels, "_", " "),
+    pressure_levels
+  )
+
+  # Auto-generate colors
+  n_formulations <- n_distinct(inhaler_summary$formulation)
+  if (is.null(formulation_colors)) {
+    formulation_colors <- viridis_pal(option = "turbo")(n_formulations)
+    names(formulation_colors) <- sort(unique(inhaler_summary$formulation))
+  }
+
+  # Calculate dimensions
+  n_pressures <- length(pressure_levels)
+  if (is.null(width)) width <- max(12, 4 * n_pressures)
+  if (is.null(height)) height <- 6
+
+  p <- ggplot() +
+    # RODOS reference
+    geom_line(data = rodos_summary,
+              aes(x = particle_size_um, y = q3_percent_mean, color = formulation),
+              linewidth = 1.2, linetype = "solid") +
+    # INHALER data
+    geom_line(data = inhaler_summary,
+              aes(x = particle_size_um, y = q3_percent_mean,
+                  color = formulation, linetype = device_resistance),
+              linewidth = 0.8) +
+    facet_wrap(~ pressure_drop_clean, nrow = 1,
+               labeller = labeller(pressure_drop_clean = pressure_labels)) +
+    scale_x_log10(
+      limits = c(0.5, 100),
+      breaks = c(0.5, 1, 2, 5, 10, 20, 50, 100),
+      labels = c("0.5", "1", "2", "5", "10", "20", "50", "100")
+    ) +
+    scale_y_continuous(
+      limits = c(0, 100),
+      breaks = seq(0, 100, 25)
+    ) +
+    scale_color_manual(values = formulation_colors, name = "Formulation") +
+    scale_linetype_manual(
+      values = device_linetypes,
+      name = "Device Resistance",
+      labels = str_to_title(str_replace_all(names(device_linetypes), "_", " "))
+    ) +
+    labs(
+      x = "Particle Size (µm)",
+      y = expression("Cumulative Distribution " * Q[3] * " (%)"),
+      title = paste0(test_module, " vs ", reference_module, " by Pressure Drop")
+    ) +
+    theme_classic(base_size = 14) +
+    theme(
+      panel.grid.major = element_line(color = "grey90", linewidth = 0.3),
+      panel.grid.minor.x = element_line(color = "grey95", linewidth = 0.2),
+      axis.title = element_text(face = "bold"),
+      legend.title = element_text(face = "bold"),
+      legend.position = "bottom",
+      plot.title = element_text(face = "bold", size = 16),
+      strip.background = element_rect(fill = "grey90", color = "black"),
+      strip.text = element_text(face = "bold", size = 12)
+    )
+
+  output_path <- file.path(output_dir, filename)
+  ggsave(output_path, p, width = width, height = height, device = "pdf")
+
+  if (verbose) {
+    cat(sprintf("✓ Saved: %s (%d pressures)\n", output_path, n_pressures))
+  }
+
+  return(p)
+}
+
+# ==============================================================================
+# NEW FUNCTION: Plot W1 Bars Faceted by Device Resistance
+# ==============================================================================
+
+plot_w1_by_device <- function(
+    w1_results,
+    metric = "W1_micrometers",
+    output_dir = "figures_v2",
+    filename = "W1_by_device.pdf",
+    width = NULL,
+    height = NULL,
+    verbose = TRUE
+) {
+
+  if (!dir.exists(output_dir)) {
+    dir.create(output_dir, recursive = TRUE)
+  }
+
+  metric_labels <- list(
+    W1_micrometers = "W₁ Distance (µm)",
+    W1_normalized = "W₁/d₅₀ (Normalized)",
+    d50_shift_um = "d₅₀ Shift (µm)"
+  )
+
+  y_label <- metric_labels[[metric]]
+  if (is.null(y_label)) {
+    stop("metric must be one of: W1_micrometers, W1_normalized, d50_shift_um")
+  }
+
+  # Auto-detect levels
+  device_levels <- w1_results %>%
+    distinct(device_resistance) %>%
+    arrange(device_resistance) %>%
+    pull(device_resistance)
+
+  if (all(c("low", "medium", "high") %in% device_levels)) {
+    device_levels <- c("low", "medium", "high")
+  }
+
+  pressure_levels <- w1_results %>%
+    distinct(pressure_drop) %>%
+    mutate(numeric_pressure = as.numeric(str_extract(pressure_drop, "\\d+"))) %>%
+    arrange(numeric_pressure) %>%
+    pull(pressure_drop)
+
+  plot_data <- w1_results %>%
+    mutate(
+      device_resistance = factor(device_resistance, levels = device_levels),
+      pressure_drop = factor(pressure_drop, levels = pressure_levels)
+    )
+
+  # Create labels
+  device_labels <- setNames(
+    str_to_title(str_replace_all(device_levels, "_", " ")),
+    device_levels
+  )
+
+  pressure_labels <- setNames(
+    str_replace(pressure_levels, "_", " "),
+    pressure_levels
+  )
+
+  # Calculate dimensions
+  n_devices <- length(device_levels)
+  n_pressures <- length(pressure_levels)
+  n_formulations <- n_distinct(plot_data$formulation)
+
+  if (is.null(width)) width <- max(12, 3 * n_devices + n_formulations * 0.3)
+  if (is.null(height)) height <- 6
+
+  p <- ggplot(plot_data, aes(x = formulation, y = .data[[metric]], fill = pressure_drop)) +
+    geom_col(position = position_dodge(width = 0.85), color = "black", linewidth = 0.3) +
+    facet_wrap(~ device_resistance, nrow = 1,
+               labeller = labeller(device_resistance = device_labels)) +
+    scale_fill_viridis_d(option = "plasma", name = "Device Pressure Drop",
+                         labels = pressure_labels) +
+    labs(
+      x = "Formulation",
+      y = y_label,
+      title = "Dispersibility by Device Resistance"
+    ) +
+    theme_classic(base_size = 14) +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1, face = "bold", size = 10),
+      axis.title = element_text(face = "bold"),
+      panel.grid.major.y = element_line(color = "grey90", linewidth = 0.3),
+      plot.title = element_text(face = "bold", size = 16),
+      strip.background = element_rect(fill = "grey90", color = "black"),
+      strip.text = element_text(face = "bold", size = 12),
+      legend.position = "bottom",
+      legend.title = element_text(face = "bold")
+    )
+
+  output_path <- file.path(output_dir, filename)
+  ggsave(output_path, p, width = width, height = height, device = "pdf")
+
+  if (verbose) {
+    cat(sprintf("✓ Saved: %s (%d devices)\n", output_path, n_devices))
+  }
+
+  return(p)
+}
+
+# ==============================================================================
+# NEW FUNCTION: Plot W1 Bars Faceted by Pressure Drop
+# ==============================================================================
+
+plot_w1_by_pressure <- function(
+    w1_results,
+    metric = "W1_micrometers",
+    output_dir = "figures_v2",
+    filename = "W1_by_pressure.pdf",
+    width = NULL,
+    height = NULL,
+    verbose = TRUE
+) {
+
+  if (!dir.exists(output_dir)) {
+    dir.create(output_dir, recursive = TRUE)
+  }
+
+  metric_labels <- list(
+    W1_micrometers = "W₁ Distance (µm)",
+    W1_normalized = "W₁/d₅₀ (Normalized)",
+    d50_shift_um = "d₅₀ Shift (µm)"
+  )
+
+  y_label <- metric_labels[[metric]]
+  if (is.null(y_label)) {
+    stop("metric must be one of: W1_micrometers, W1_normalized, d50_shift_um")
+  }
+
+  # Auto-detect levels
+  device_levels <- w1_results %>%
+    distinct(device_resistance) %>%
+    arrange(device_resistance) %>%
+    pull(device_resistance)
+
+  if (all(c("low", "medium", "high") %in% device_levels)) {
+    device_levels <- c("low", "medium", "high")
+  }
+
+  pressure_levels <- w1_results %>%
+    distinct(pressure_drop) %>%
+    mutate(numeric_pressure = as.numeric(str_extract(pressure_drop, "\\d+"))) %>%
+    arrange(numeric_pressure) %>%
+    pull(pressure_drop)
+
+  plot_data <- w1_results %>%
+    mutate(
+      device_resistance = factor(device_resistance, levels = device_levels),
+      pressure_drop = factor(pressure_drop, levels = pressure_levels)
+    )
+
+  # Create labels
+  device_labels <- setNames(
+    str_to_title(str_replace_all(device_levels, "_", " ")),
+    device_levels
+  )
+
+  pressure_labels <- setNames(
+    str_replace(pressure_levels, "_", " "),
+    pressure_levels
+  )
+
+  # Calculate dimensions
+  n_devices <- length(device_levels)
+  n_pressures <- length(pressure_levels)
+  n_formulations <- n_distinct(plot_data$formulation)
+
+  if (is.null(width)) width <- max(12, 3 * n_pressures + n_formulations * 0.3)
+  if (is.null(height)) height <- 6
+
+  p <- ggplot(plot_data, aes(x = formulation, y = .data[[metric]], fill = device_resistance)) +
+    geom_col(position = position_dodge(width = 0.85), color = "black", linewidth = 0.3) +
+    facet_wrap(~ pressure_drop, nrow = 1,
+               labeller = labeller(pressure_drop = pressure_labels)) +
+    scale_fill_viridis_d(option = "plasma", name = "Device Resistance",
+                         labels = device_labels) +
+    labs(
+      x = "Formulation",
+      y = y_label,
+      title = "Dispersibility by Pressure Drop"
+    ) +
+    theme_classic(base_size = 14) +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1, face = "bold", size = 10),
+      axis.title = element_text(face = "bold"),
+      panel.grid.major.y = element_line(color = "grey90", linewidth = 0.3),
+      plot.title = element_text(face = "bold", size = 16),
+      strip.background = element_rect(fill = "grey90", color = "black"),
+      strip.text = element_text(face = "bold", size = 12),
+      legend.position = "bottom",
+      legend.title = element_text(face = "bold")
+    )
+
+  output_path <- file.path(output_dir, filename)
+  ggsave(output_path, p, width = width, height = height, device = "pdf")
+
+  if (verbose) {
+    cat(sprintf("✓ Saved: %s (%d pressures)\n", output_path, n_pressures))
+  }
+
+  return(p)
+}
+
+# ==============================================================================
 # FUNCTION 5: Create Publication Figure Panel
 # ==============================================================================
 
