@@ -772,7 +772,10 @@ plot_cdf_by_device <- function(
       values = pressure_linetypes,
       name = "Device Pressure Drop",
       labels = str_replace(names(pressure_linetypes), "_", " "),
-      guide = guide_legend(override.aes = list(linewidth = 1.5))
+      guide = guide_legend(
+        override.aes = list(linewidth = 1.2),
+        keywidth = unit(3, "cm")
+      )
     ) +
     labs(
       x = "Particle Size (µm)",
@@ -918,7 +921,10 @@ plot_cdf_by_pressure <- function(
       values = device_linetypes,
       name = "Device Resistance",
       labels = str_to_title(str_replace_all(names(device_linetypes), "_", " ")),
-      guide = guide_legend(override.aes = list(linewidth = 1.5))
+      guide = guide_legend(
+        override.aes = list(linewidth = 1.2),
+        keywidth = unit(3, "cm")
+      )
     ) +
     labs(
       x = "Particle Size (µm)",
