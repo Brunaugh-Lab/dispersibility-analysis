@@ -628,12 +628,19 @@ plot_bootstrap_results <- function(bootstrap_results, output_dir = "figures_v2",
   # Add faceting if we have varying factors
   if (has_device & has_pressure) {
     p1 <- p1 + facet_grid(device_resistance ~ pressure_drop,
-                          labeller = labeller(device_resistance = label_both,
-                                            pressure_drop = label_both))
+                          labeller = labeller(
+                            device_resistance = ~paste("Resistance:", .),
+                            pressure_drop = ~paste("Pressure:", .)
+                          )) +
+      theme(strip.text = element_text(size = 9))
   } else if (has_device) {
-    p1 <- p1 + facet_wrap(~device_resistance, labeller = label_both)
+    p1 <- p1 + facet_wrap(~device_resistance,
+                          labeller = labeller(device_resistance = ~paste("Resistance:", .))) +
+      theme(strip.text = element_text(size = 9))
   } else if (has_pressure) {
-    p1 <- p1 + facet_wrap(~pressure_drop, labeller = label_both)
+    p1 <- p1 + facet_wrap(~pressure_drop,
+                          labeller = labeller(pressure_drop = ~paste("Pressure:", .))) +
+      theme(strip.text = element_text(size = 9))
   }
 
   # Plot 2: Standard errors - show by condition
@@ -654,12 +661,19 @@ plot_bootstrap_results <- function(bootstrap_results, output_dir = "figures_v2",
 
   if (has_device & has_pressure) {
     p2 <- p2 + facet_grid(device_resistance ~ pressure_drop,
-                          labeller = labeller(device_resistance = label_both,
-                                            pressure_drop = label_both))
+                          labeller = labeller(
+                            device_resistance = ~paste("Resistance:", .),
+                            pressure_drop = ~paste("Pressure:", .)
+                          )) +
+      theme(strip.text = element_text(size = 9))
   } else if (has_device) {
-    p2 <- p2 + facet_wrap(~device_resistance, labeller = label_both)
+    p2 <- p2 + facet_wrap(~device_resistance,
+                          labeller = labeller(device_resistance = ~paste("Resistance:", .))) +
+      theme(strip.text = element_text(size = 9))
   } else if (has_pressure) {
-    p2 <- p2 + facet_wrap(~pressure_drop, labeller = label_both)
+    p2 <- p2 + facet_wrap(~pressure_drop,
+                          labeller = labeller(pressure_drop = ~paste("Pressure:", .))) +
+      theme(strip.text = element_text(size = 9))
   }
 
   # Plot 3: Relative standard error
@@ -682,12 +696,19 @@ plot_bootstrap_results <- function(bootstrap_results, output_dir = "figures_v2",
 
   if (has_device & has_pressure) {
     p3 <- p3 + facet_grid(device_resistance ~ pressure_drop,
-                          labeller = labeller(device_resistance = label_both,
-                                            pressure_drop = label_both))
+                          labeller = labeller(
+                            device_resistance = ~paste("Resistance:", .),
+                            pressure_drop = ~paste("Pressure:", .)
+                          )) +
+      theme(strip.text = element_text(size = 9))
   } else if (has_device) {
-    p3 <- p3 + facet_wrap(~device_resistance, labeller = label_both)
+    p3 <- p3 + facet_wrap(~device_resistance,
+                          labeller = labeller(device_resistance = ~paste("Resistance:", .))) +
+      theme(strip.text = element_text(size = 9))
   } else if (has_pressure) {
-    p3 <- p3 + facet_wrap(~pressure_drop, labeller = label_both)
+    p3 <- p3 + facet_wrap(~pressure_drop,
+                          labeller = labeller(pressure_drop = ~paste("Pressure:", .))) +
+      theme(strip.text = element_text(size = 9))
   }
 
   # Combine plots with dynamic sizing
