@@ -660,7 +660,7 @@ plot_cdf_by_device <- function(
     reference_module = "RODOS",
     test_module = "INHALER",
     formulation_colors = NULL,
-    pressure_linetypes = c("1_kPa" = "dashed", "2_kPa" = "dotdash", "4_kPa" = "solid"),
+    pressure_linetypes = NULL,
     output_dir = "figures_v2",
     filename = "CDF_by_device.pdf",
     width = NULL,
@@ -714,6 +714,16 @@ plot_cdf_by_device <- function(
     mutate(numeric_pressure = as.numeric(str_extract(pressure_drop_clean, "\\d+"))) %>%
     arrange(numeric_pressure) %>%
     pull(pressure_drop_clean)
+
+    # Auto-generate linetypes if not provided
+  if (is.null(pressure_linetypes)) {
+    linetype_options <- c("solid", "dashed", "dotted", "dotdash", "longdash", "twodash")
+    n_pressures_detected <- length(pressure_levels)
+    pressure_linetypes <- setNames(
+      linetype_options[1:n_pressures_detected],
+      pressure_levels
+    )
+  }
 
   # Factor levels
   inhaler_summary <- inhaler_summary %>%
