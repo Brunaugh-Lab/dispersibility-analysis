@@ -178,7 +178,8 @@ bootstrap_pool_replicates <- function(replicate_cdfs_info, n_replicates = NULL) 
 #'   - bootstrap_samples: List column with all W1 values
 #'
 bootstrap_w1_single <- function(data, formulation, reference_module = "RODOS",
-                               test_module = "INHALER", n_bootstrap = 2000,
+                               test_module = "INHALER", device_resistance = NULL,
+                              pressure_drop = NULL, n_bootstrap = 2000,
                                seed = NULL, verbose = TRUE) {
 
   if (!is.null(seed)) set.seed(seed)
@@ -194,13 +195,15 @@ bootstrap_w1_single <- function(data, formulation, reference_module = "RODOS",
 
   # Get individual replicate CDFs for both conditions
   ref_replicates <- get_replicate_cdfs(data, formulation, reference_module)
-  test_replicates <- get_replicate_cdfs(data, formulation, test_module)
+  test_replicates <- get_replicate_cdfs(data, formulation, test_module, device_resistance = device_resistance, pressure_drop = pressure_drop)
 
   # Check that we have data for both conditions
   if (length(ref_replicates$cdfs) == 0 || length(test_replicates$cdfs) == 0) {
     warning(sprintf("Missing replicate data for formulation %s", formulation))
     return(tibble(
       formulation = formulation,
+      device_resistance = device_resistance %||% NA_character_,
+      pressure_drop = pressure_drop %||% NA_character_,
       w1_mean = NA_real_, w1_sd = NA_real_,
       w1_ci_lower = NA_real_, w1_ci_upper = NA_real_,
       w1_observed = NA_real_, n_bootstrap = n_bootstrap,
