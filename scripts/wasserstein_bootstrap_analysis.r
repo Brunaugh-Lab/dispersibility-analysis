@@ -278,7 +278,7 @@ bootstrap_w1_single <- function(data, formulation, reference_module = "RODOS",
     w1_observed = w1_observed,
     n_bootstrap = n_bootstrap,
     bootstrap_samples = list(w1_bootstrap)
-  )
+  ))
 }
 
 # ==============================================================================
