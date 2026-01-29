@@ -597,13 +597,12 @@ plot_bootstrap_results <- function(bootstrap_results, output_dir = "figures_v2",
   # Create condition label for x-axis (combines all non-varying factors)
   bootstrap_results <- bootstrap_results %>%
     mutate(
-      condition_label = if_else(
-        has_device & has_pressure,
-        paste0(device_resistance, "\n", pressure_drop),
-        if_else(has_device, as.character(device_resistance),
-                if_else(has_pressure, as.character(pressure_drop), ""))
-      ),
-      condition_label = if_else(condition_label == "", "All", condition_label)
+      condition_label = case_when(
+        has_device & has_pressure ~ paste0(device_resistance, "\n", pressure_drop),
+        has_device ~ as.character(device_resistance),
+        has_pressure ~ as.character(pressure_drop),
+        TRUE ~ "All"
+      )
     )
 
   # Plot 1: Confidence intervals with smart faceting
