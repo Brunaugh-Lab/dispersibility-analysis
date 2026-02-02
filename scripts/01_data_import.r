@@ -23,7 +23,7 @@
 
 
 # ==============================================================================
-# Dependencies (no library(); use pkg::fn everywhere)
+# Dependencies
 # ==============================================================================
 
 .required_packages <- c("readr", "dplyr", "tidyr", "purrr", "stringr", "janitor")
