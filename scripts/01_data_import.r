@@ -127,6 +127,27 @@ if (length(.missing_packages) > 0) {
   })
 }
 
+# ==============================================================================
+# INTERNAL: Standardize PAQXOS column name variants after janitor::clean_names()
+# ==============================================================================
+.standardize_ld_columns <- function(df) {
+
+  # size bin column (xo / µm) can normalize differently across systems
+  size_candidates <- c("xo_mm", "xo_um", "xo_m", "xo")
+  size_found <- size_candidates[size_candidates %in% names(df)][1]
+  if (!is.na(size_found) && size_found != "xo_mm") {
+    df <- dplyr::rename(df, xo_mm = dplyr::all_of(size_found))
+  }
+
+  # Q3 percent column (Q₃ / %) sometimes becomes q_3_percent
+  q3_candidates <- c("q3_percent", "q_3_percent", "q3_pct", "q_3_pct")
+  q3_found <- q3_candidates[q3_candidates %in% names(df)][1]
+  if (!is.na(q3_found) && q3_found != "q3_percent") {
+    df <- dplyr::rename(df, q3_percent = dplyr::all_of(q3_found))
+  }
+
+  df
+}
 
 # ==============================================================================
 # INTERNAL: Read PAQXOS distribution data block for each file (auto-skip)
@@ -134,19 +155,20 @@ if (length(.missing_packages) > 0) {
 .read_paqxos_data_block <- function(files, default_skip = 2, verbose = FALSE) {
 
   purrr::map_dfr(files, function(file) {
+
     skip <- .detect_paqxos_skip(file, default_skip = default_skip, verbose = verbose)
 
-    if (verbose) {
-      cat("Reading data block: skip=", skip, "  file=", file, "\n", sep = "")
-    }
-
-    df <- readr::read_csv(
-      file,
-      skip = skip,
-      col_types = readr::cols(.default = "c"),
-      show_col_types = FALSE
+    df <- suppressMessages(
+      readr::read_csv(
+        file,
+        skip = skip,
+        col_types = readr::cols(.default = "c"),
+        show_col_types = FALSE,
+        name_repair = "minimal"   # reduce "New names" chatter
+      )
     ) |>
-      janitor::clean_names()
+      janitor::clean_names() |>
+      .standardize_ld_columns()
 
     df$source_file <- file
     df
@@ -189,7 +211,27 @@ read_ld_data_from_structure <- function(
     stop("No CSV files found in ", data_directory, call. = FALSE)
   }
 
+  # Normalize paths so detection works on Windows too
   file_paths <- normalizePath(file_paths, winslash = "/", mustWork = FALSE)
+
+  # Exclude generated outputs from being re-read as inputs
+  output_dir_norm <- normalizePath(output_dir, winslash = "/", mustWork = FALSE)
+
+  file_paths <- file_paths[
+    !stringr::str_detect(file_paths, paste0("^", stringr::fixed(output_dir_norm), "(/|$)"))
+  ]
+
+  # Extra safety: also exclude the output filename anywhere it appears
+  file_paths <- file_paths[basename(file_paths) != output_filename]
+
+  if (length(file_paths) == 0) {
+    stop(
+      "No input PAQXOS CSV files found after excluding output_dir/output file.\n",
+      "Check your data_directory and folder structure.",
+      call. = FALSE
+    )
+  }
+
 
   if (verbose) {
     cat("\n========================================================================\n")
