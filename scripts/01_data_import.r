@@ -326,10 +326,15 @@ read_ld_data_from_structure <- function(
       is_inhaler = module == "INHALER",
       is_rodos   = module == "RODOS",
 
-      formulation = dplyr::case_when(
-        !is.na(formulation_id) ~ formulation_id,  # works for INHALER now; will work for RODOS after re-export
-        is_rodos ~ stringr::str_extract(basename(dirname(source_file)), formulation_pattern),
-        TRUE     ~ NA_character_
+      # formulation_id is now the primary source for BOTH dispersers
+      .form_id = dplyr::na_if(formulation_id, ""),
+      .form_id = dplyr::na_if(.form_id, "NA"),
+      .form_id = dplyr::na_if(.form_id, "na"),
+
+      formulation = dplyr::coalesce(
+        .form_id,
+        # legacy/public fallback: folder name
+        stringr::str_extract(basename(dirname(source_file)), formulation_pattern)
       ),
 
       device_resistance = dplyr::case_when(
@@ -357,7 +362,8 @@ read_ld_data_from_structure <- function(
         is_rodos ~ stringr::str_extract(filename, replicate_pattern),
         TRUE     ~ NA_character_
       )
-    )
+    ) |>
+    dplyr::select(-.form_id)
 
   # Deterministic INHALER replicate labels
   combined_data <- combined_data |>
@@ -394,7 +400,10 @@ read_ld_data_from_structure <- function(
 
   # Warnings
   if (any(is.na(combined_data$formulation))) {
-    warning("Some files have NA formulation - expected for RODOS until formulation_id is embedded; folder fallback may also be failing.")
+    warning(
+      "Some files have NA formulation. Expected: formulation_id in metadata. ",
+      "Check PAQXOS export settings or folder fallback pattern."
+    )
   }
   if (any(is.na(combined_data$replicate))) {
     warning("Some files have NA replicate - check replicate_pattern (RODOS) or INHALER file parsing.")
