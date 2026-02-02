@@ -1,269 +1,567 @@
 # ==============================================================================
-# 01_data_import.R
-# Data Import and Standardization for Laser Diffraction Dispersibility Analysis
+# 01_data_import.R — Laser Diffraction Data Import + Standardization
 #
-# Purpose: Flexible reading of Sympatec PAQXOS CSV exports with metadata
-#          extraction from directory structure. Automatically saves cleaned
-#          data for downstream analysis.
+# What this does
+#   - Reads Sympatec PAQXOS CSV exports for RODOS (reference) and INHALER (test)
+#   - Reads the 2-row PAQXOS metadata block for BOTH dispersers (consistent ingestion)
+#   - Determines disperser type primarily from CSV metadata ("Dispersing system")
+#   - AUTO-DETECTS the data-block header line per file (skip_rows becomes per-file)
+#   - Standardizes columns and extracts metadata needed for downstream W₁ analysis
+#   - Writes a single tidy CSV for the rest of the pipeline
 #
-# Auto-execution: Script automatically runs when sourced
-#   - Reads all CSV files from data/ directory
-#   - Saves to processed/standardized_data.csv
-#   - Folder name becomes formulation ID
+# Inputs expected
+#   data_dir/  (any structure; subfolders optional)
+#     *.csv
 #
-# Expected Directory Structure:
-#   data/
-#   ├── FormulationA/          ← Folder name = Formulation ID
-#   │   ├── inhaler/  (or INHALER)
-#   │   │   ├── rep1.csv
-#   │   │   ├── rep2.csv
-#   │   │   └── rep3.csv
-#   │   └── rodos/    (or RODOS)
-#   │       ├── rep1.csv
-#   │       └── ...
-#   └── FormulationB/
-#       └── ...
+# Output
+#   <data_dir>/tidy/standardized_data_with_conditions.csv   (default)
 #
-# Output Structure (auto-created):
-#   data/
-#   └── tidy/
-#       └── standardized_data.csv
-#
-# Usage:
-#   source("scripts/01_data_import.R")  # That's it!
-#
+# How to run
+#   source("scripts/01_data_import.R")   # loads functions
+#   data <- run_data_import("data")      # executes import + validation + write
 # ==============================================================================
 
-library(tidyverse)
-library(janitor)
+
+# ==============================================================================
+# Dependencies
+# ==============================================================================
+
+.required_packages <- c("readr", "dplyr", "tidyr", "purrr", "stringr", "janitor")
+
+.missing_packages <- .required_packages[
+  !vapply(.required_packages, requireNamespace, logical(1), quietly = TRUE)
+]
+
+if (length(.missing_packages) > 0) {
+  stop(
+    "Missing required packages: ",
+    paste(.missing_packages, collapse = ", "),
+    "\nInstall with:\n",
+    "install.packages(c(",
+    paste(sprintf('"%s"', .missing_packages), collapse = ", "),
+    "))",
+    call. = FALSE
+  )
+}
+
+
+# ==============================================================================
+# INTERNAL: Detect PAQXOS data-table header row for a single file
+#   - Returns skip value for readr::read_csv() so that the distribution header
+#     (e.g., "xo / µm,Q₃ / %,...") becomes the column header line.
+# ==============================================================================
+.detect_paqxos_skip <- function(file, max_lines = 40, default_skip = 2, verbose = FALSE) {
+
+  lines <- tryCatch(
+    readLines(file, n = max_lines, warn = FALSE),
+    error = function(e) character(0)
+  )
+
+  if (length(lines) == 0) {
+    if (verbose) cat("WARN: Could not read lines for skip detection: ", file, "\n", sep = "")
+    return(default_skip)
+  }
+
+  # Normalize: lowercase, trim whitespace
+  l <- stringr::str_trim(tolower(lines))
+
+  # Robust heuristic:
+  #  - header line starts with "xo"
+  #  - contains commas (CSV header)
+  #  - contains a q-column marker (q, q3, q₃, etc.)
+  is_header <- stringr::str_detect(l, "^\\s*xo\\s*[/,]") &
+    stringr::str_detect(l, ",") &
+    stringr::str_detect(l, "q")
+
+  idx <- which(is_header)[1]
+
+  if (is.na(idx)) {
+    if (verbose) {
+      cat(
+        "WARN: Could not auto-detect PAQXOS header row; using default skip=",
+        default_skip, " for ", file, "\n", sep = ""
+      )
+    }
+    return(default_skip)
+  }
+
+  # readr::read_csv(skip = k-1) will read line k as header row
+  skip <- max(idx - 1, 0)
+  skip
+}
+
+
+# ==============================================================================
+# INTERNAL: Read 2-row PAQXOS metadata block (row 1 headers, row 2 values)
+#   - Returns one row per file
+#   - All metadata kept as character
+#   - Column names cleaned for stable downstream use
+# ==============================================================================
+.read_paqxos_metadata <- function(files) {
+  purrr::map_dfr(files, function(file) {
+
+    headers <- readr::read_csv(
+      file,
+      n_max = 1,
+      col_names = FALSE,
+      col_types = readr::cols(.default = "c"),
+      show_col_types = FALSE
+    )
+
+    values <- readr::read_csv(
+      file,
+      skip = 1,
+      n_max = 1,
+      col_names = FALSE,
+      col_types = readr::cols(.default = "c"),
+      show_col_types = FALSE
+    )
+
+    min_cols <- min(ncol(headers), ncol(values))
+    headers <- headers[, 1:min_cols, drop = FALSE]
+    values  <- values[, 1:min_cols, drop = FALSE]
+
+    row <- as.list(values)
+    names(row) <- as.character(headers[1, ])
+
+    out <- dplyr::as_tibble(row)
+    out$source_file <- file
+
+    janitor::clean_names(out, replace = c(
+      "µ" = "u", "μ" = "u", "\u00b5" = "u",
+      "₃" = "3", "³" = "3"
+    ))
+  })
+}
+
+# ==============================================================================
+# INTERNAL: Standardize PAQXOS column name variants after janitor::clean_names()
+#   FIXED VERSION - more flexible pattern matching
+# ==============================================================================
+.standardize_ld_columns <- function(df, verbose = FALSE) {
+
+  nms <- names(df)
+
+  # --- size bin column (xo / µm) ---
+  # janitor::clean_names() converts "xo / µm" to something like "xo_um" or "xo_u_m"
+  # Expanded candidates to catch more variants
+  size_candidates <- c("xo_mm", "xo_um", "xo_u_m", "xo_m", "xo")
+  size_found <- size_candidates[size_candidates %in% nms][1]
+
+  # If not found, fall back to pattern (starts with xo)
+  if (is.na(size_found)) {
+    size_found <- nms[stringr::str_detect(nms, "^xo($|_)")][1]
+  }
+
+  if (!is.na(size_found) && size_found != "xo_mm") {
+    df <- dplyr::rename(df, xo_mm = dplyr::all_of(size_found))
+  }
+
+  # --- Q3 percent column (Q₃ / %) ---
+  # janitor::clean_names() converts "Q₃ / %" to something like "q_3_percent" or "q3_percent"
+  # Expanded candidates and patterns
+  q3_candidates <- c("q3_percent", "q_3_percent", "q3_pct", "q_3_pct", "q_3")
+  q3_found <- q3_candidates[q3_candidates %in% nms][1]
+
+  # Pattern fallback: more flexible - starts with q and optionally contains 3, percent, or pct
+  if (is.na(q3_found)) {
+    # First try: q followed by optional underscore/3 and contains "percent"
+    q3_found <- nms[
+      stringr::str_detect(nms, "^q(_?3)?(_|$)") &
+        stringr::str_detect(nms, "percent|pct")
+    ][1]
+  }
+
+  # Second fallback: just starts with q and has 3 somewhere
+  if (is.na(q3_found)) {
+    q3_found <- nms[
+      stringr::str_detect(nms, "^q") &
+        stringr::str_detect(nms, "3")
+    ][1]
+  }
+
+  if (!is.na(q3_found) && q3_found != "q3_percent") {
+    df <- dplyr::rename(df, q3_percent = dplyr::all_of(q3_found))
+  }
+
+  df
+}
+
+# ==============================================================================
+# INTERNAL: Read PAQXOS distribution data block for each file (auto-skip)
+#   FIXED VERSION - includes diagnostic output
+# ==============================================================================
+.read_paqxos_data_block <- function(files, default_skip = 2, verbose = FALSE) {
+
+  bad_files <- character(0)
+  diagnostic_info <- list()
+
+  out <- purrr::map_dfr(files, function(file) {
+
+    skip <- .detect_paqxos_skip(file, default_skip = default_skip, verbose = verbose)
+
+    df <- suppressMessages(
+      readr::read_csv(
+        file,
+        skip = skip,
+        col_types = readr::cols(.default = "c"),
+        show_col_types = FALSE,
+        name_repair = "minimal"
+      )
+    )
+
+    # Store original column names for diagnostics
+    original_names <- names(df)
+
+    # Clean names
+    df <- df |>
+      janitor::clean_names(replace = c(
+        "µ" = "u", "μ" = "u", "\u00b5" = "u",
+        "₃" = "3", "³" = "3"
+      ))
+
+    cleaned_names <- names(df)
+
+    # Standardize
+    df <- .standardize_ld_columns(df, verbose = FALSE)
+
+    # Basic per-file contract check
+    required <- c("xo_mm", "q3_percent")
+    if (!all(required %in% names(df))) {
+      bad_files <<- c(bad_files, file)
+      diagnostic_info[[file]] <<- list(
+        original = original_names,
+        cleaned = cleaned_names,
+        final = names(df),
+        missing = setdiff(required, names(df))
+      )
+      return(dplyr::tibble())  # skip this file cleanly
+    }
+
+    df$source_file <- file
+    df
+  })
+
+  # Emit detailed diagnostic warning
+  if (length(bad_files) > 0) {
+    warning(
+      "Skipped ", length(bad_files), " CSV(s) that did not contain expected PAQXOS columns ",
+      "(xo_mm + q3_percent) after auto-detect.\n\n",
+      "DIAGNOSTIC INFO for first file:\n",
+      if (length(diagnostic_info) > 0) {
+        first_file <- names(diagnostic_info)[1]
+        info <- diagnostic_info[[first_file]]
+        paste0(
+          "  File: ", basename(first_file), "\n",
+          "  Original columns: ", paste(info$original[1:min(5, length(info$original))], collapse = ", "), "\n",
+          "  After clean_names: ", paste(info$cleaned[1:min(5, length(info$cleaned))], collapse = ", "), "\n",
+          "  After standardize: ", paste(info$final[1:min(5, length(info$final))], collapse = ", "), "\n",
+          "  Missing: ", paste(info$missing, collapse = ", "), "\n"
+        )
+      } else "",
+      "\nFirst few file paths:\n  - ",
+      paste(utils::head(basename(bad_files), 5), collapse = "\n  - "),
+      if (length(bad_files) > 5) "\n  ... (and more)" else "",
+      call. = FALSE
+    )
+  }
+
+  out
+}
+
 
 # ==============================================================================
 # CORE FUNCTION: Read and standardize laser diffraction data
 # ==============================================================================
-
-#' Read Laser Diffraction CSV Files with Metadata from Directory Structure
-#'
-#' By default, the entire folder name becomes the formulation ID. This works for
-#' any naming scheme - simple ("FormA"), numbered ("Run2"), or complex ("231067_IMT").
-#'
-#' @param data_directory Path to directory containing subdirectories organized
-#'   by formulation and dispersion module (e.g., "data/", "./raw_data/")
-#' @param formulation_pattern Regex pattern to extract formulation ID from
-#'   folder name. Default: ".*" (uses entire folder name - RECOMMENDED)
-#'   Only customize if you need to extract a portion:
-#'   - "\\d+_IMT" : Extracts "132067_IMT" from "132067_IMT_batch1"
-#'   - "Form[A-Z]" : Extracts "FormA" from "FormA_replicate_set"
-#' @param replicate_pattern Regex pattern to extract replicate ID from filename.
-#'   Default: "[Rr]ep_?\\d+" matches rep1, Rep1, rep_1, Rep_1
-#' @param skip_rows Number of header rows to skip in CSV files.
-#'   Default: 2 (standard for Sympatec PAQXOS exports)
-#' @param module_folders Character vector of folder names that indicate dispersion
-#'   modules. Default: c("inhaler", "INHALER", "rodos", "RODOS")
-#'   Function will standardize these to uppercase for consistency.
-#' @param output_dir Directory to save tidy data. Default: "data/tidy/"
-#' @param save_output Should standardized data be saved to CSV? Default: TRUE
-#' @param output_filename Name of output file. Default: "standardized_data.csv"
-#' @param verbose Print progress messages? Default: TRUE
-#'
-#' @return Tibble with standardized columns:
-#'   - particle_size_um: Particle diameter in micrometers (from xo column)
-#'   - q3_percent: Cumulative volume distribution, 0-100%
-#'   - q3_cdf: Cumulative distribution function, 0-1 (for Wasserstein calculation)
-#'   - formulation: Formulation identifier (from folder name)
-#'   - module: Dispersion module (INHALER or RODOS, standardized to uppercase)
-#'   - replicate: Replicate identifier (auto-standardized to lowercase)
-#'   - source_file: Full path to original CSV file for traceability
-#'
-#' @details
-#' This function automatically:
-#' - Creates data/tidy/ directory if needed
-#' - Saves standardized_data.csv for downstream scripts
-#' - Standardizes replicate names to lowercase
-#' - Extracts formulation ID from folder name (entire name by default)
-#'
-#' @examples
-#' # Recommended - uses entire folder name as formulation ID
-#' data <- read_ld_data_from_structure("data/")
-#'
-#' # Only needed if extracting portion of folder name
-#' data <- read_ld_data_from_structure(
-#'   "data/",
-#'   formulation_pattern = "\\d+_IMT"
-#' )
-#'
 read_ld_data_from_structure <- function(
-    data_directory,
-    formulation_pattern = ".*",  # Default: use entire folder name
-    replicate_pattern = "[Rr]ep_?\\d+",  # Flexible: rep1, Rep1, rep_1, Rep_1
-    skip_rows = 2,
-    module_folders = c("inhaler", "INHALER", "rodos", "RODOS"),
-    output_dir = "data/tidy",
-    save_output = TRUE,
-    output_filename = "standardized_data.csv",
-    verbose = TRUE
+  data_directory,
+  formulation_pattern = ".*",            # Default: use entire folder name (RODOS fallback)
+  replicate_pattern   = "[Rr]ep_?\\d+",  # rep1, Rep1, rep_1, Rep_1 (RODOS fallback)
+  skip_rows           = 2,               # used as default fallback if auto-detect fails
+  module_folders      = c("inhaler", "INHALER", "rodos", "RODOS"),  # API compatibility
+  output_dir          = file.path(data_directory, "tidy"),
+  save_output         = TRUE,
+  output_filename     = "standardized_data_with_conditions.csv",
+  verbose             = TRUE
 ) {
 
-  # Validate inputs
   if (!dir.exists(data_directory)) {
-    stop("Data directory does not exist: ", data_directory)
+    stop("Data directory does not exist: ", data_directory, call. = FALSE)
   }
 
-  # Create output directory if it doesn't exist
   if (save_output && !dir.exists(output_dir)) {
-    dir.create(output_dir, recursive = TRUE)
-    if (verbose) {
-      cat("Created output directory:", output_dir, "\n")
-    }
-  }
-
-  # Find all CSV files recursively
-  file_paths <- list.files(
-    path = data_directory,
-    pattern = "\\.csv$",
-    recursive = TRUE,
-    full.names = TRUE
-  )
-
-  if (length(file_paths) == 0) {
-    stop("No CSV files found in ", data_directory)
+    dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+    if (verbose) cat("Created output directory: ", output_dir, "\n", sep = "")
   }
 
   if (verbose) {
     cat("\n========================================================================\n")
     cat("READING LASER DIFFRACTION DATA\n")
     cat("========================================================================\n")
-    cat("Data directory:", data_directory, "\n")
-    cat("CSV files found:", length(file_paths), "\n")
-    cat("Skip rows:", skip_rows, "\n")
-    if (save_output) {
-      cat("Output directory:", output_dir, "\n")
-      cat("Output file:", file.path(output_dir, output_filename), "\n")
-    }
-    cat("------------------------------------------------------------------------\n\n")
+    cat("Data directory: ", data_directory, "\n", sep = "")
   }
 
-  # Read all CSV files
-  combined_data <- read_csv(
-    file_paths,
-    id = "source_file",
-    skip = skip_rows,
-    col_types = cols(.default = "c"),
-    show_col_types = FALSE
-  ) %>%
-    clean_names() %>%
-    mutate(
-      # Convert size and cumulative distribution to numeric
-      particle_size_um = as.numeric(xo_mm),  # xo_mm is particle size in µm
-      q3_percent = as.numeric(q3_percent),
-      # CRITICAL: Convert Q3 from percent (0-100) to probability (0-1) for CDF
-      q3_cdf = q3_percent / 100
-    ) %>%
-    filter(!is.na(particle_size_um))
+  # --- File discovery (exclude tidy/ outputs to avoid re-ingestion) ---
+  all_csv_files <- list.files(
+    data_directory,
+    pattern = "\\.csv$",
+    full.names = TRUE,
+    recursive = TRUE,
+    ignore.case = TRUE
+  )
 
-  # Extract metadata from directory structure
-  combined_data <- combined_data %>%
-    mutate(
-      # Extract formulation from parent directory name
-      # Path structure: .../FormulationFolder/module/file.csv
-      formulation_folder = basename(dirname(dirname(source_file))),
-      formulation = str_extract(formulation_folder, formulation_pattern),
+  tidy_pattern <- paste0(
+    "[\\/\\\\]", basename(output_dir), "[\\/\\\\]"
+  )
 
-      # Extract module from immediate parent directory
-      module_folder = basename(dirname(source_file)),
-      module = case_when(
-        tolower(module_folder) == "inhaler" ~ "INHALER",
-        tolower(module_folder) == "rodos" ~ "RODOS",
-        TRUE ~ toupper(module_folder)  # Standardize to uppercase
+  csv_files <- all_csv_files[
+    !stringr::str_detect(all_csv_files, tidy_pattern)
+  ]
+
+  if (length(csv_files) == 0) {
+    stop("No CSV files found in ", data_directory, call. = FALSE)
+  }
+
+  if (verbose) {
+    cat("Total CSV files found: ", length(csv_files), "\n", sep = "")
+    if (length(all_csv_files) > length(csv_files)) {
+      cat("Excluded outputs in /tidy/: ",
+          length(all_csv_files) - length(csv_files), "\n", sep = "")
+    }
+  }
+
+  # --- Read metadata block (rows 1–2) ---
+  if (verbose) cat("\nReading PAQXOS metadata (rows 1-2)...\n")
+  metadata <- .read_paqxos_metadata(csv_files)
+
+  if (verbose) {
+    cat("Files with metadata: ", nrow(metadata), "\n", sep = "")
+  }
+
+  # --- Read distribution data block (auto-detect header row) ---
+  if (verbose) cat("\nReading distribution data blocks (auto-detecting skip rows)...\n")
+  data_block <- .read_paqxos_data_block(
+    csv_files,
+    default_skip = skip_rows,
+    verbose = verbose
+  )
+
+  if (nrow(data_block) == 0) {
+    stop(
+      "No valid PAQXOS distribution data found. Check CSV structure and column names.",
+      call. = FALSE
+    )
+  }
+
+  if (verbose) {
+    cat("Files with valid data blocks: ",
+        dplyr::n_distinct(data_block$source_file), "\n", sep = "")
+  }
+
+  # --- Join metadata + data ---
+  combined_data <- dplyr::inner_join(
+    data_block,
+    metadata,
+    by = "source_file",
+    suffix = c("", "_meta")
+  )
+
+  if (nrow(combined_data) == 0) {
+    stop(
+      "No data after joining metadata and distribution blocks. ",
+      "Check that source_file paths match exactly.",
+      call. = FALSE
+    )
+  }
+
+  if (verbose) {
+    cat("Rows after joining metadata + data: ", nrow(combined_data), "\n", sep = "")
+  }
+
+  # --- Numeric conversion + CDF ---
+  combined_data <- combined_data |>
+    dplyr::mutate(
+      particle_size_um = suppressWarnings(as.numeric(xo_mm)),
+      q3_percent       = suppressWarnings(as.numeric(q3_percent)),
+      q3_cdf           = q3_percent / 100
+    ) |>
+    dplyr::filter(
+      !is.na(particle_size_um),
+      !is.na(q3_percent),
+      particle_size_um > 0
+    )
+
+  # --- Module classification (disperser type) ---
+  combined_data <- combined_data |>
+    dplyr::mutate(
+      dispersing_system_clean = stringr::str_trim(
+        tolower(
+          dplyr::coalesce(dispersing_system, "")
+        )
+      ),
+      is_rodos   = stringr::str_detect(dispersing_system_clean, "rodos"),
+      is_inhaler = stringr::str_detect(dispersing_system_clean, "inhaler"),
+
+      # Folder-based fallback
+      folder = dirname(source_file),
+      is_rodos = dplyr::case_when(
+        is_rodos ~ TRUE,
+        stringr::str_detect(tolower(folder), "rodos") ~ TRUE,
+        TRUE ~ is_rodos
+      ),
+      is_inhaler = dplyr::case_when(
+        is_inhaler ~ TRUE,
+        stringr::str_detect(tolower(folder), "inhaler") ~ TRUE,
+        TRUE ~ is_inhaler
       ),
 
-      # Extract replicate from filename
+      # Require exactly one disperser type
+      .is_ambiguous = is_rodos & is_inhaler,
+      .is_unknown   = !(is_rodos | is_inhaler),
+
+      module = dplyr::case_when(
+        .is_ambiguous ~ NA_character_,
+        .is_unknown   ~ NA_character_,
+        is_rodos      ~ "RODOS",
+        is_inhaler    ~ "INHALER",
+        TRUE          ~ NA_character_
+      )
+    ) |>
+    dplyr::filter(!is.na(module))
+
+  if (verbose) {
+    cat("Files classified as RODOS or INHALER: ",
+        dplyr::n_distinct(combined_data$source_file), "\n", sep = "")
+  }
+
+  # --- Extract analysis-relevant metadata ---
+  combined_data <- combined_data |>
+    dplyr::mutate(
+      .form_id = dplyr::coalesce(formulation_id, NA_character_),
+      formulation = dplyr::case_when(
+        !is.na(.form_id) ~ .form_id,
+        TRUE ~ stringr::str_extract(
+          basename(dirname(source_file)),
+          formulation_pattern
+        )
+      ),
+
+      device_resistance = dplyr::case_when(
+        is_rodos ~ "reference",
+        TRUE     ~ dplyr::case_when(
+          stringr::str_detect(tolower(device), "low")    ~ "low",
+          stringr::str_detect(tolower(device), "medium") ~ "medium",
+          stringr::str_detect(tolower(device), "high")   ~ "high",
+          TRUE ~ NA_character_
+        )
+      ),
+
+      pressure_drop_clean = dplyr::case_when(
+        is_rodos ~ NA_real_,
+        TRUE     ~ suppressWarnings(
+          as.numeric(
+            stringr::str_extract(pressure_drop, "\\d+(\\.\\d+)?")
+          )
+        )
+      ),
+
+      measurement_time = dplyr::coalesce(
+        time,
+        stringr::str_extract(identifier, "\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}")
+      ),
+
       filename = basename(source_file),
-      replicate = str_extract(filename, replicate_pattern)
-    ) %>%
-    select(
+
+      replicate = NA_character_
+    ) |>
+    dplyr::select(-.form_id)
+
+  # Deterministic  replicate labels
+  combined_data <- combined_data |>
+    dplyr::group_by(formulation, module, device_resistance, pressure_drop_clean) |>
+    dplyr::mutate(
+      .time_key = dplyr::if_else(
+        !is.na(measurement_time),
+        measurement_time,
+        source_file
+      )
+    ) |>
+    dplyr::arrange(.time_key, .by_group = TRUE) |>
+    dplyr::mutate(
+      .file_rank = dplyr::dense_rank(source_file),
+      replicate = paste0("rep", .file_rank)  # Apply to all modules
+    ) |>
+    dplyr::ungroup() |>
+    dplyr::select(
       particle_size_um,
       q3_percent,
       q3_cdf,
       formulation,
       module,
+      device_resistance,
+      pressure_drop_clean,
       replicate,
+      measurement_time,
       source_file
-    )
+    ) |>
+    dplyr::mutate(replicate = tolower(replicate))
 
-  # Standardize replicate names to lowercase automatically
-  combined_data <- combined_data %>%
-    mutate(replicate = tolower(replicate))
-
-  # Validate extraction
+  # Warnings
   if (any(is.na(combined_data$formulation))) {
-    warning("Some files have NA formulation - check formulation_pattern")
-  }
-  if (any(is.na(combined_data$module))) {
-    warning("Some files have NA module - check directory structure")
+    warning(
+      "Some files have NA formulation. Expected: formulation_id in metadata. ",
+      "Check PAQXOS export settings or folder fallback pattern."
+    )
   }
   if (any(is.na(combined_data$replicate))) {
-    warning("Some files have NA replicate - check replicate_pattern")
+    warning("Some files have NA replicate - check replicate_pattern (RODOS) or INHALER file parsing.")
   }
 
-  # Print summary
+  # Summary
   if (verbose) {
     cat("Data extraction summary:\n")
-    cat("\nFormulations found:", n_distinct(combined_data$formulation), "\n")
+    cat("\nFormulations found: ", dplyr::n_distinct(combined_data$formulation), "\n", sep = "")
     print(unique(combined_data$formulation))
 
-    cat("\nModules found:", n_distinct(combined_data$module), "\n")
+    cat("\nModules found: ", dplyr::n_distinct(combined_data$module), "\n", sep = "")
     print(unique(combined_data$module))
-
-    cat("\nReplicates found:", n_distinct(combined_data$replicate), "\n")
-    print(unique(combined_data$replicate))
 
     cat("\nFiles per formulation-module combination:\n")
     print(
-      combined_data %>%
-        distinct(source_file, formulation, module) %>%
-        count(formulation, module) %>%
-        pivot_wider(names_from = module, values_from = n, values_fill = 0)
+      combined_data |>
+        dplyr::distinct(source_file, formulation, module) |>
+        dplyr::count(formulation, module) |>
+        tidyr::pivot_wider(names_from = module, values_from = n, values_fill = 0)
     )
 
     cat("\n========================================================================\n")
     cat("DATA IMPORT COMPLETE\n")
-    cat("Total rows:", nrow(combined_data), "\n")
-    cat("Formulations:", n_distinct(combined_data$formulation), "\n")
-    cat("Modules:", n_distinct(combined_data$module), "\n")
-    cat("Files processed:", n_distinct(combined_data$source_file), "\n")
+    cat("Total rows: ", nrow(combined_data), "\n", sep = "")
+    cat("Formulations: ", dplyr::n_distinct(combined_data$formulation), "\n", sep = "")
+    cat("Modules: ", dplyr::n_distinct(combined_data$module), "\n", sep = "")
+    cat("Files processed: ", dplyr::n_distinct(combined_data$source_file), "\n", sep = "")
     cat("========================================================================\n\n")
   }
 
-  # Save output if requested
+  # Save output
   if (save_output) {
     output_path <- file.path(output_dir, output_filename)
-    write_csv(combined_data, output_path)
+    readr::write_csv(combined_data, output_path)
 
     if (verbose) {
-      cat("✓ Standardized data saved to:", output_path, "\n")
-      cat("  File size:", format(object.size(combined_data), units = "MB"), "\n")
+      cat("✓ Standardized data saved to: ", output_path, "\n", sep = "")
+      cat("  File size: ", format(utils::object.size(combined_data), units = "MB"), "\n", sep = "")
       cat("  This file can be loaded by subsequent analysis scripts\n\n")
     }
   }
 
-  return(combined_data)
+  combined_data
 }
 
 
 # ==============================================================================
 # HELPER FUNCTION: Validate data structure
 # ==============================================================================
-
-#' Validate Laser Diffraction Data Structure
-#'
-#' Checks that imported data has required columns and reasonable values
-#'
-#' @param data Tibble from read_ld_data_from_structure()
-#' @param check_replicates Should function check for balanced replicates? Default: TRUE
-#' @param min_replicates Minimum expected replicates per condition. Default: 3
-#'
-#' @return Invisibly returns TRUE if validation passes, otherwise prints warnings
-#'
 validate_ld_data <- function(data, check_replicates = TRUE, min_replicates = 3) {
 
   cat("\n========================================================================\n")
@@ -272,32 +570,45 @@ validate_ld_data <- function(data, check_replicates = TRUE, min_replicates = 3) 
 
   all_valid <- TRUE
 
-  # Check required columns
-  required_cols <- c("particle_size_um", "q3_percent", "q3_cdf",
-                     "formulation", "module", "replicate", "source_file")
+  required_cols <- c(
+    "particle_size_um", "q3_percent", "q3_cdf",
+    "formulation", "module", "device_resistance",
+    "pressure_drop_clean", "replicate", "source_file"
+  )
+
   missing_cols <- setdiff(required_cols, names(data))
 
   if (length(missing_cols) > 0) {
-    cat("ERROR: Missing required columns:", paste(missing_cols, collapse = ", "), "\n")
+    cat("ERROR: Missing required columns: ", paste(missing_cols, collapse = ", "), "\n", sep = "")
     all_valid <- FALSE
   } else {
     cat("✓ All required columns present\n")
   }
 
-  # Check for NA values in key columns
-  na_counts <- data %>%
-    summarise(across(c(particle_size_um, q3_percent, formulation, module, replicate),
-                     ~sum(is.na(.))))
+  # Check for NAs - but exclude expected NAs for RODOS
+  # RODOS should have NA for pressure_drop_clean (no pressure drop for reference disperser)
+  na_checks <- data |>
+    dplyr::summarise(
+      particle_size_um = sum(is.na(particle_size_um)),
+      q3_percent = sum(is.na(q3_percent)),
+      formulation = sum(is.na(formulation)),
+      module = sum(is.na(module)),
+      device_resistance = sum(is.na(device_resistance)),
+      # Only check pressure_drop_clean for INHALER rows
+      pressure_drop_clean = sum(is.na(pressure_drop_clean) & module == "INHALER"),
+      replicate = sum(is.na(replicate))
+    )
 
-  if (any(na_counts > 0)) {
-    cat("\nWARNING: NA values detected:\n")
-    print(na_counts)
+  na_counts_vec <- unlist(na_checks, use.names = FALSE)
+
+  if (any(na_counts_vec > 0)) {
+    cat("\nWARNING: Unexpected NA values detected:\n")
+    print(na_checks)
     all_valid <- FALSE
   } else {
-    cat("✓ No NA values in key columns\n")
+    cat("✓ No unexpected NA values in key columns\n")
   }
 
-  # Check CDF bounds (should be 0-1)
   if (any(data$q3_cdf < 0, na.rm = TRUE) || any(data$q3_cdf > 1, na.rm = TRUE)) {
     cat("\nWARNING: q3_cdf values outside [0,1] range\n")
     all_valid <- FALSE
@@ -305,27 +616,27 @@ validate_ld_data <- function(data, check_replicates = TRUE, min_replicates = 3) 
     cat("✓ CDF values within [0,1] range\n")
   }
 
-  # Check for balanced replicates
   if (check_replicates) {
-    replicate_counts <- data %>%
-      distinct(source_file, formulation, module, replicate) %>%
-      count(formulation, module) %>%
-      rename(n_replicates = n)
+    replicate_counts <- data |>
+      dplyr::distinct(source_file, formulation, module, replicate) |>
+      dplyr::count(formulation, module, name = "n_replicates")
 
     if (any(replicate_counts$n_replicates < min_replicates)) {
-      cat("\nWARNING: Some conditions have fewer than", min_replicates, "replicates:\n")
-      print(replicate_counts %>% filter(n_replicates < min_replicates))
+      cat("\nWARNING: Some conditions have fewer than ", min_replicates, " replicates:\n", sep = "")
+      print(replicate_counts |>
+        dplyr::filter(n_replicates < min_replicates)
+      )
       all_valid <- FALSE
     } else {
-      cat("✓ All conditions have ≥", min_replicates, "replicates\n")
+      cat("✓ All conditions have ≥ ", min_replicates, " replicates\n", sep = "")
     }
   }
 
-  # Check for duplicate files
-  duplicate_files <- data %>%
-    group_by(source_file, particle_size_um) %>%
-    filter(n() > 1) %>%
-    distinct(source_file)
+  duplicate_files <- data |>
+    dplyr::group_by(source_file, particle_size_um) |>
+    dplyr::filter(dplyr::n() > 1) |>
+    dplyr::distinct(source_file) |>
+    dplyr::ungroup()
 
   if (nrow(duplicate_files) > 0) {
     cat("\nWARNING: Duplicate entries detected for some files\n")
@@ -342,157 +653,63 @@ validate_ld_data <- function(data, check_replicates = TRUE, min_replicates = 3) 
   }
   cat("========================================================================\n\n")
 
-  return(invisible(all_valid))
+  invisible(all_valid)
 }
 
 
 # ==============================================================================
 # CONVENIENCE FUNCTION: Load previously saved standardized data
 # ==============================================================================
-
-#' Load Standardized Data from Previous Run
-#'
-#' Quickly loads the standardized data saved by read_ld_data_from_structure()
-#' without re-reading all raw CSV files.
-#'
-#' @param processed_dir Directory containing tidy data. Default: "data/tidy/"
-#' @param filename Name of standardized data file. Default: "standardized_data.csv"
-#' @param verbose Print loading message? Default: TRUE
-#'
-#' @return Tibble with standardized data
-#'
-#' @examples
-#' # Load previously processed data (much faster than re-importing)
-#' data <- load_standardized_data()
-#'
 load_standardized_data <- function(
-    processed_dir = "data/tidy",
-    filename = "standardized_data.csv",
-    verbose = TRUE
+  processed_dir = "data/tidy",
+  filename = "standardized_data_with_conditions.csv",
+  verbose = TRUE
 ) {
 
   file_path <- file.path(processed_dir, filename)
 
   if (!file.exists(file_path)) {
-    stop("Standardized data file not found: ", file_path,
-         "\nRun read_ld_data_from_structure() first to create this file.")
+    stop(
+      "Standardized data file not found: ", file_path,
+      "\nRun read_ld_data_from_structure() first to create this file.",
+      call. = FALSE
+    )
   }
+
+  if (verbose) cat("Loading standardized data from: ", file_path, "\n", sep = "")
+
+  data <- readr::read_csv(file_path, show_col_types = FALSE)
 
   if (verbose) {
-    cat("Loading standardized data from:", file_path, "\n")
+    cat("✓ Loaded ", nrow(data), " rows\n", sep = "")
+    cat("  Formulations: ", dplyr::n_distinct(data$formulation), "\n", sep = "")
+    cat("  Modules: ", paste(unique(data$module), collapse = ", "), "\n\n", sep = "")
   }
 
-  data <- read_csv(file_path, show_col_types = FALSE)
-
-  if (verbose) {
-    cat("✓ Loaded", nrow(data), "rows\n")
-    cat("  Formulations:", n_distinct(data$formulation), "\n")
-    cat("  Modules:", paste(unique(data$module), collapse = ", "), "\n\n")
-  }
-
-  return(data)
+  data
 }
 
 
 # ==============================================================================
 # CONVENIENCE FUNCTION: Run import with project defaults
 # ==============================================================================
-
-#' Run Data Import with Sensible Defaults
-#'
-#' Convenience wrapper that uses standard settings:
-#' - Entire folder name becomes formulation ID
-#' - Flexible replicate matching (rep1, Rep1, rep_1, etc.)
-#' - Auto-saves to processed/standardized_data.csv
-#' - Auto-validates
-#'
-#' @param data_directory Path to data folder. Default: "data/"
-#' @param formulation_pattern Regex for formulation ID. Default: ".*" (entire folder name)
-#' @param replicate_pattern Regex for replicate ID. Default: "[Rr]ep_?\\d+"
-#' @param verbose Print progress? Default: TRUE
-#'
-#' @return Tibble with standardized data
-#'
-#' @examples
-#' # Simple usage with all defaults
-#' data <- run_data_import()
-#'
-#' # Custom data directory
-#' data <- run_data_import("raw_data/")
-#'
 run_data_import <- function(
-    data_directory = "data",
-    formulation_pattern = ".*",  # Use entire folder name
-    replicate_pattern = "[Rr]ep_?\\d+",  # Flexible replicate matching
-    verbose = TRUE
+  data_directory = "data",
+  formulation_pattern = ".*",
+  replicate_pattern = "[Rr]ep_?\\d+",
+  verbose = TRUE
 ) {
 
-  # Run the full import
   data <- read_ld_data_from_structure(
     data_directory = data_directory,
     formulation_pattern = formulation_pattern,
     replicate_pattern = replicate_pattern,
+    output_dir = file.path(data_directory, "tidy"),
     save_output = TRUE,
     verbose = verbose
   )
 
-  # Validate
   validate_ld_data(data, check_replicates = TRUE, min_replicates = 3)
 
-  return(data)
-}
-
-
-# ==============================================================================
-# AUTO-EXECUTION: Run import when script is sourced
-# ==============================================================================
-
-# Check if data directory exists
-if (dir.exists("data")) {
-
-  cat("\n========================================================================\n")
-  cat("AUTO-RUNNING DATA IMPORT\n")
-  cat("========================================================================\n")
-  cat("Reading from: data/\n")
-  cat("Saving to: data/tidy/standardized_data.csv\n")
-  cat("------------------------------------------------------------------------\n")
-
-  # Run the import with defaults
-  .standardized_data <- run_data_import(verbose = TRUE)
-
-  cat("\n========================================================================\n")
-  cat("IMPORT COMPLETE - Data saved to data/tidy/standardized_data.csv\n")
-  cat("========================================================================\n")
-  cat("Next step: Run Wasserstein analysis\n")
-  cat("  source('scripts/02_wasserstein_core.R')\n")
-  cat("------------------------------------------------------------------------\n")
-  cat("To reload data later without re-importing:\n")
-  cat("  source('scripts/01_data_import.R')\n")
-  cat("  data <- load_standardized_data()\n")
-  cat("========================================================================\n\n")
-
-  # Clean up the auto-generated variable (optional)
-  # Uncomment if you don't want .standardized_data in the environment
-  # rm(.standardized_data)
-
-} else {
-  cat("\n========================================================================\n")
-  cat("DATA IMPORT - WAITING FOR DATA FOLDER\n")
-  cat("========================================================================\n")
-  cat("Data directory not found: data/\n")
-  cat("\nPlease create a data/ folder with your laser diffraction files:\n")
-  cat("  data/\n")
-  cat("  ├── FormulationA/\n")
-  cat("  │   ├── inhaler/\n")
-  cat("  │   │   ├── rep1.csv\n")
-  cat("  │   │   ├── rep2.csv\n")
-  cat("  │   │   └── rep3.csv\n")
-  cat("  │   └── rodos/\n")
-  cat("  │       └── ...\n")
-  cat("  └── FormulationB/\n")
-  cat("      └── ...\n")
-  cat("\nFolder names will become formulation IDs.\n")
-  cat("Then run this script again:\n")
-  cat("  source('scripts/01_data_import.R')\n")
-  cat("========================================================================\n\n")
+  data
 }
