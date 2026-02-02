@@ -1,44 +1,43 @@
 # ==============================================================================
-# 01_data_import.R
-# Data Import and Standardization for Laser Diffraction Dispersibility Analysis
+# 01_data_import.R — Laser Diffraction Data Import + Standardization
 #
-# Purpose: Enhanced reading of Sympatec PAQXOS CSV exports with support for
-#          device operating conditions (resistance/pressure) and metadata
-#          extraction from both directory structure and CSV headers.
+# What this does
+#   - Reads Sympatec PAQXOS CSV exports for RODOS (reference) and INHALER (test)
+#   - Standardizes columns and extracts metadata needed for downstream W₁ analysis
+#   - Writes a single tidy CSV for the rest of the pipeline
 #
-# Auto-execution: Script automatically runs when sourced
-#   - Reads all CSV files from data_v2/ directory
-#   - Extracts device conditions from INHALER CSV metadata
-#   - Assigns replicates by timestamp for INHALER files
-#   - Saves to data_v2/tidy/standardized_data_with_conditions.csv
+# Inputs expected
+#   data_dir/
+#     RODOS/<formulation>/*.csv          (replicates; no condition metadata in file)
+#     INHALER/*.csv                      (each file contains condition metadata)
 #
-# Enhanced Directory Structure:
-#   data_v2/
-#   ├── RODOS/                 ← Reference measurements
-#   │   ├── FormulationA/      ← Folder name = Formulation ID
-#   │   │   ├── rep1.csv
-#   │   │   ├── rep2.csv
-#   │   │   └── rep3.csv
-#   │   ├── FormulationB/
-#   │   │   ├── rep1.csv
-#   │   │   ├── rep2.csv
-#   │   │   └── rep3.csv
-#   │   └── FormulationC/
-#   │       └── ...
-#   └── INHALER/               ← Test measurements with device conditions
-#       ├── file1.csv          ← Contains metadata: formulation_id, Device, pressure_drop, Time
-#       ├── file2.csv          ← Device: RS01-M7-low/medium/high (flexible)
-#       ├── file3.csv          ← Pressure: 1_kPa, 2_kPa, 4_kPa (flexible)
-#       └── ...fileN.csv       ← Any number of files with various condition combinations
+# Output
+#   <output_dir>/<output_filename>
+#   Required columns include:
+#     particle_size_um, q3_percent, q3_cdf,
+#     formulation, module, replicate,
+#     device_resistance, pressure_drop_clean,
+#     measurement_time, source_file
 #
-# Output Structure (auto-created):
-#   data_v2/
-#   └── tidy/
-#       └── standardized_data_with_conditions.csv
+# Key design choices (do not change without intent)
+#   - q3_cdf = q3_percent / 100  (W₁ operates on CDFs in [0,1])
+#   - RODOS is treated as formulation-level reference (condition-independent)
+#   - INHALER replicates are identified at the file level; replicate labels are derived
+#     deterministically (see replicate assignment section below)
 #
-# Usage:
-#   source("scripts/01_data_import.R")  # That's it!
+# How to run
+#   source("scripts/01_data_import.R")
+#   # or call run_data_import("data")
 #
+# Configuration
+#   - Default data directory: data_/
+#   - Default output: data/tidy/standardized_data_with_conditions.csv
+#   - Edit defaults inside run_data_import() if your project layout differs
+#
+# Maintainers
+#   - Brunaugh Lab, University of Michigan
+#   - Code: Grace Xia, Ashlee Brunaugh
+#   - Last updated: 2026-02-02
 # ==============================================================================
 
 library(tidyverse)
