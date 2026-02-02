@@ -43,9 +43,6 @@
 library(tidyverse)
 library(janitor)
 
-AUTO_RUN <- FALSE  # set TRUE for lab convenience; keep FALSE for public use
-DEFAULT_DATA_DIR <- "data"
-
 # ==============================================================================
 # CORE FUNCTION: Read and standardize laser diffraction data
 # ==============================================================================
@@ -161,39 +158,3 @@ run_data_import <- function(
   return(data)
 }
 
-# ==============================================================================
-# AUTO-EXECUTION (optional)
-# ==============================================================================
-
-if (AUTO_RUN) {
-  if (dir.exists(DEFAULT_DATA_DIR)) {
-
-    cat("\n========================================================================\n")
-    cat("AUTO-RUNNING DATA IMPORT\n")
-    cat("========================================================================\n")
-    cat("Reading from: ", DEFAULT_DATA_DIR, "/\n", sep = "")
-    cat("Saving to: ", file.path(DEFAULT_DATA_DIR, "tidy", "standardized_data_with_conditions.csv"), "\n", sep = "")
-    cat("------------------------------------------------------------------------\n")
-
-    .standardized_data <- run_data_import(DEFAULT_DATA_DIR, verbose = TRUE)
-
-    cat("\n========================================================================\n")
-    cat("IMPORT COMPLETE\n")
-    cat("========================================================================\n")
-    cat("Next step: Run Wasserstein analysis\n")
-    cat("  source('scripts/02_wasserstein_core.R')\n")
-    cat("------------------------------------------------------------------------\n")
-    cat("To reload data later without re-importing:\n")
-    cat("  data <- load_standardized_data(processed_dir = 'data/tidy',\n")
-    cat("                                filename = 'standardized_data_with_conditions.csv')\n")
-    cat("========================================================================\n\n")
-
-  } else {
-    cat("\n========================================================================\n")
-    cat("DATA IMPORT - WAITING FOR DATA FOLDER\n")
-    cat("========================================================================\n")
-    cat("Data directory not found: ", DEFAULT_DATA_DIR, "/\n", sep = "")
-    cat("Create it and re-run.\n")
-    cat("========================================================================\n\n")
-  }
-}
