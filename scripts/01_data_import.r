@@ -3,16 +3,17 @@
 #
 # What this does
 #   - Reads Sympatec PAQXOS CSV exports for RODOS (reference) and INHALER (test)
+#   - Reads the 2-row PAQXOS metadata block for BOTH dispersers (consistent ingestion)
 #   - Standardizes columns and extracts metadata needed for downstream W₁ analysis
 #   - Writes a single tidy CSV for the rest of the pipeline
 #
 # Inputs expected
 #   data_dir/
-#     RODOS/<formulation>/*.csv          (replicates; no condition metadata in file)
-#     INHALER/*.csv                      (each file contains condition metadata)
+#     RODOS/<formulation>/*.csv
+#     INHALER/*.csv   (or INHALER/<formulation>/*.csv also works)
 #
 # Output
-#   <output_dir>/<output_filename>
+#   <data_dir>/tidy/standardized_data_with_conditions.csv   (default)
 #   Required columns include:
 #     particle_size_um, q3_percent, q3_cdf,
 #     formulation, module, replicate,
@@ -27,7 +28,6 @@
 # How to run
 #   source("scripts/01_data_import.R")   # loads functions
 #   data <- run_data_import("data")      # executes import + validation + write
-#
 # ==============================================================================
 
 
@@ -55,9 +55,29 @@ if (length(.missing_packages) > 0) {
 
 
 # ==============================================================================
+# INTERNAL: Read 2-row PAQXOS metadata block (row 1 headers, row 2 values)
+# ==============================================================================
+.read_paqxos_metadata <- function(files) {
+  purrr::map_dfr(files, function(file) {
+    headers <- readr::read_csv(file, n_max = 1, col_names = FALSE, show_col_types = FALSE)
+    values  <- readr::read_csv(file, skip = 1, n_max = 1, col_names = FALSE, show_col_types = FALSE)
+
+    min_cols <- min(ncol(headers), ncol(values))
+    headers <- headers[, 1:min_cols, drop = FALSE]
+    values  <- values[, 1:min_cols, drop = FALSE]
+
+    row <- as.list(values)
+    names(row) <- as.character(headers[1, ])
+
+    row$source_file <- file
+    dplyr::as_tibble(row)
+  })
+}
+
+
+# ==============================================================================
 # CORE FUNCTION: Read and standardize laser diffraction data
 # ==============================================================================
-
 read_ld_data_from_structure <- function(
   data_directory,
   formulation_pattern = ".*",            # Default: use entire folder name
@@ -111,7 +131,7 @@ read_ld_data_from_structure <- function(
   }
 
   # ---------------------------------------------------------------------------
-  # Split INHALER vs RODOS by path
+  # Split INHALER vs RODOS by path (case-insensitive, path-safe)
   # ---------------------------------------------------------------------------
   inhaler_files <- file_paths[stringr::str_detect(file_paths, "(?i)(^|/)inhaler(/|$)")]
   rodos_files   <- file_paths[stringr::str_detect(file_paths, "(?i)(^|/)rodos(/|$)")]
@@ -124,25 +144,11 @@ read_ld_data_from_structure <- function(
   }
 
   # ---------------------------------------------------------------------------
-  # INHALER: read metadata rows (first 2 rows) + data (skip 2 rows)
+  # INHALER: metadata (rows 1-2) + data (skip 2)
   # ---------------------------------------------------------------------------
   if (length(inhaler_files) > 0) {
 
-    inhaler_metadata <- purrr::map_dfr(inhaler_files, function(file) {
-      headers <- readr::read_csv(file, n_max = 1, col_names = FALSE, show_col_types = FALSE)
-      values  <- readr::read_csv(file, skip = 1, n_max = 1, col_names = FALSE, show_col_types = FALSE)
-
-      min_cols <- min(ncol(headers), ncol(values))
-      headers <- headers[, 1:min_cols, drop = FALSE]
-      values  <- values[, 1:min_cols, drop = FALSE]
-
-      # Name the value row using header row
-      metadata_row <- as.list(values)
-      names(metadata_row) <- as.character(headers[1, ])
-
-      metadata_row$source_file <- file
-      dplyr::as_tibble(metadata_row)
-    })
+    inhaler_metadata <- .read_paqxos_metadata(inhaler_files)
 
     inhaler_data <- readr::read_csv(
       inhaler_files,
@@ -166,10 +172,15 @@ read_ld_data_from_structure <- function(
   }
 
   # ---------------------------------------------------------------------------
-  # RODOS: read normally (no metadata in file; folder encodes formulation)
+  # RODOS: metadata (rows 1-2) + data (skip skip_rows)
+  #   NOTE: Your RODOS files ALSO have the same 2-row PAQXOS metadata block.
+  #         We ingest it the same way for consistency.
   # ---------------------------------------------------------------------------
   if (length(rodos_files) > 0) {
-    rodos_combined <- readr::read_csv(
+
+    rodos_metadata <- .read_paqxos_metadata(rodos_files)
+
+    rodos_data <- readr::read_csv(
       rodos_files,
       id = "source_file",
       skip = skip_rows,
@@ -177,6 +188,10 @@ read_ld_data_from_structure <- function(
       show_col_types = FALSE
     ) |>
       janitor::clean_names()
+
+    rodos_combined <- rodos_data |>
+      dplyr::left_join(rodos_metadata, by = "source_file")
+
   } else {
     rodos_combined <- dplyr::tibble()
   }
@@ -186,7 +201,7 @@ read_ld_data_from_structure <- function(
   # ---------------------------------------------------------------------------
   combined_data <- dplyr::bind_rows(inhaler_combined, rodos_combined)
 
-  # Basic contract checks (public-facing helpful failures)
+  # Basic contract checks (helpful public-facing failures)
   required_raw <- c("xo_mm", "q3_percent")
   missing_raw <- setdiff(required_raw, names(combined_data))
   if (length(missing_raw) > 0) {
@@ -206,10 +221,13 @@ read_ld_data_from_structure <- function(
     dplyr::filter(!is.na(particle_size_um))
 
   # ---------------------------------------------------------------------------
-  # Extract metadata (INHALER from embedded columns; RODOS from folder structure)
+  # Extract metadata
+  #   - Ingestion is consistent (both join file metadata)
+  #   - Policy for "formulation":
+  #       INHALER uses formulation_id (embedded column)
+  #       RODOS uses folder name (one level up from file)
+  #     (This matches your current project reality and avoids depending on "Product".)
   # ---------------------------------------------------------------------------
-  # Normalize source_file path separator already done above.
-
   combined_data <- combined_data |>
     dplyr::mutate(
       is_inhaler = stringr::str_detect(source_file, "(?i)(^|/)inhaler(/|$)"),
@@ -217,7 +235,7 @@ read_ld_data_from_structure <- function(
 
       formulation = dplyr::case_when(
         is_inhaler ~ formulation_id,
-        TRUE ~ stringr::str_extract(basename(dirname(source_file)), formulation_pattern)
+        TRUE       ~ stringr::str_extract(basename(dirname(source_file)), formulation_pattern)
       ),
 
       module = dplyr::case_when(
@@ -243,13 +261,15 @@ read_ld_data_from_structure <- function(
         TRUE        ~ "unknown"
       ),
 
-      measurement_time = dplyr::case_when(
-        is_inhaler ~ as.character(Time),
-        TRUE       ~ NA_character_
+      # Prefer Time if present (INHALER has full datetime); otherwise fall back to Identifier.
+      measurement_time = dplyr::coalesce(
+        as.character(Time),
+        as.character(Identifier)
       ),
 
       filename = basename(source_file),
 
+      # RODOS replicate from filename pattern
       replicate = dplyr::case_when(
         !is_inhaler ~ stringr::str_extract(filename, replicate_pattern),
         TRUE        ~ NA_character_
@@ -258,11 +278,20 @@ read_ld_data_from_structure <- function(
 
   # ---------------------------------------------------------------------------
   # Assign INHALER replicate labels deterministically (file-level)
+  #   - If measurement_time is present, rank by time; otherwise rank by source_file.
+  #   - Uses file-level rank (unique source_file) within each condition.
   # ---------------------------------------------------------------------------
   combined_data <- combined_data |>
     dplyr::group_by(formulation, module, device_resistance, pressure_drop_clean) |>
     dplyr::mutate(
-      # rank unique files within each condition; stable + deterministic
+      .time_key = dplyr::if_else(
+        !is.na(measurement_time),
+        measurement_time,
+        source_file
+      )
+    ) |>
+    dplyr::arrange(.time_key, .by_group = TRUE) |>
+    dplyr::mutate(
       .file_rank = dplyr::dense_rank(source_file),
       replicate = dplyr::case_when(
         is_inhaler ~ paste0("rep", .file_rank),
@@ -361,7 +390,6 @@ read_ld_data_from_structure <- function(
 # ==============================================================================
 # HELPER FUNCTION: Validate data structure
 # ==============================================================================
-
 validate_ld_data <- function(data, check_replicates = TRUE, min_replicates = 3) {
 
   cat("\n========================================================================\n")
@@ -453,7 +481,6 @@ validate_ld_data <- function(data, check_replicates = TRUE, min_replicates = 3) 
 # ==============================================================================
 # CONVENIENCE FUNCTION: Load previously saved standardized data
 # ==============================================================================
-
 load_standardized_data <- function(
   processed_dir = "data/tidy",
   filename = "standardized_data_with_conditions.csv",
@@ -487,7 +514,6 @@ load_standardized_data <- function(
 # ==============================================================================
 # CONVENIENCE FUNCTION: Run import with project defaults
 # ==============================================================================
-
 run_data_import <- function(
   data_directory = "data",
   formulation_pattern = ".*",
