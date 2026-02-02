@@ -59,8 +59,22 @@ if (length(.missing_packages) > 0) {
 # ==============================================================================
 .read_paqxos_metadata <- function(files) {
   purrr::map_dfr(files, function(file) {
-    headers <- readr::read_csv(file, n_max = 1, col_names = FALSE, show_col_types = FALSE)
-    values  <- readr::read_csv(file, skip = 1, n_max = 1, col_names = FALSE, show_col_types = FALSE)
+    headers <- readr::read_csv(
+      file,
+      n_max = 1,
+      col_names = FALSE,
+      col_types = readr::cols(.default = "c"),
+      show_col_types = FALSE
+    )
+
+    values <- readr::read_csv(
+      file,
+      skip = 1,
+      n_max = 1,
+      col_names = FALSE,
+      col_types = readr::cols(.default = "c"),
+      show_col_types = FALSE
+    )
 
     min_cols <- min(ncol(headers), ncol(values))
     headers <- headers[, 1:min_cols, drop = FALSE]
