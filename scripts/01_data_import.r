@@ -585,25 +585,29 @@ validate_ld_data <- function(data, check_replicates = TRUE, min_replicates = 3) 
     cat("✓ All required columns present\n")
   }
 
-  na_counts <- data |>
+  # Check for NAs - but exclude expected NAs for RODOS
+  # RODOS should have NA for pressure_drop_clean (no pressure drop for reference disperser)
+  na_checks <- data |>
     dplyr::summarise(
-      dplyr::across(
-        c(particle_size_um, q3_percent, formulation, module,
-          device_resistance, pressure_drop_clean, replicate),
-        ~ sum(is.na(.x))
-      )
+      particle_size_um = sum(is.na(particle_size_um)),
+      q3_percent = sum(is.na(q3_percent)),
+      formulation = sum(is.na(formulation)),
+      module = sum(is.na(module)),
+      device_resistance = sum(is.na(device_resistance)),
+      # Only check pressure_drop_clean for INHALER rows
+      pressure_drop_clean = sum(is.na(pressure_drop_clean) & module == "INHALER"),
+      replicate = sum(is.na(replicate))
     )
 
-  na_counts_vec <- unlist(na_counts, use.names = FALSE)
+  na_counts_vec <- unlist(na_checks, use.names = FALSE)
 
   if (any(na_counts_vec > 0)) {
-    cat("\nWARNING: NA values detected:\n")
-    print(na_counts)
+    cat("\nWARNING: Unexpected NA values detected:\n")
+    print(na_checks)
     all_valid <- FALSE
   } else {
-    cat("✓ No NA values in key columns\n")
+    cat("✓ No unexpected NA values in key columns\n")
   }
-
 
   if (any(data$q3_cdf < 0, na.rm = TRUE) || any(data$q3_cdf > 1, na.rm = TRUE)) {
     cat("\nWARNING: q3_cdf values outside [0,1] range\n")
