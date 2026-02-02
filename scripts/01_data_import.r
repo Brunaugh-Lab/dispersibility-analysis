@@ -65,18 +65,23 @@ if (length(.missing_packages) > 0) {
   # Normalize: lowercase, trim whitespace
   l <- stringr::str_trim(tolower(lines))
 
-  # Heuristic: the distribution header line contains "xo" and "q" and looks like comma-separated headers.
-  # We include variants to tolerate micro symbol conversions (µ -> u or removed).
-  is_header <- stringr::str_detect(l, "^xo\\s*/") |
-    stringr::str_detect(l, "^xo\\s*,") |
-    (stringr::str_detect(l, "\\bxo\\b") & stringr::str_detect(l, "q") & stringr::str_detect(l, ","))
+  # Stronger heuristic: true PAQXOS header must contain BOTH xo and q3 on the same line,
+  # plus commas. This avoids false positives from metadata rows.
+  has_xo     <- stringr::str_detect(l, "\\bxo\\b")
+  has_q3     <- stringr::str_detect(l, "\\bq\\s*3\\b|q₃|q3")
+  has_comma <- stringr::str_detect(l, ",")
+
+  is_header <- stringr::str_detect(l, "^xo\\s*([,/]|\\s)") &
+               has_xo & has_q3 & has_comma
 
   idx <- which(is_header)[1]
 
   if (is.na(idx)) {
     if (verbose) {
-      cat("WARN: Could not auto-detect PAQXOS header row; using default skip=",
-          default_skip, " for ", file, "\n", sep = "")
+      cat(
+        "WARN: Could not auto-detect PAQXOS header row; using default skip=",
+        default_skip, " for ", file, "\n", sep = ""
+      )
     }
     return(default_skip)
   }
@@ -154,7 +159,9 @@ if (length(.missing_packages) > 0) {
 # ==============================================================================
 .read_paqxos_data_block <- function(files, default_skip = 2, verbose = FALSE) {
 
-  purrr::map_dfr(files, function(file) {
+  bad_files <- character(0)
+
+  out <- purrr::map_dfr(files, function(file) {
 
     skip <- .detect_paqxos_skip(file, default_skip = default_skip, verbose = verbose)
 
@@ -164,15 +171,36 @@ if (length(.missing_packages) > 0) {
         skip = skip,
         col_types = readr::cols(.default = "c"),
         show_col_types = FALSE,
-        name_repair = "minimal"   # reduce "New names" chatter
+        name_repair = "minimal"
       )
     ) |>
       janitor::clean_names(replace = c("µ" = "u", "μ" = "u", "\u00b5" = "u")) |>
       .standardize_ld_columns()
 
+    # Basic per-file contract check
+    required <- c("xo_mm", "q3_percent")
+    if (!all(required %in% names(df))) {
+      bad_files <<- c(bad_files, file)
+      return(dplyr::tibble())  # skip this file cleanly
+    }
+
     df$source_file <- file
     df
   })
+
+  # Emit a single useful warning with the file list
+  if (length(bad_files) > 0) {
+    warning(
+      "Skipped ", length(bad_files), " CSV(s) that did not contain expected PAQXOS columns ",
+      "(xo_mm + q3_percent) after auto-detect.\n",
+      "First few:\n  - ",
+      paste(utils::head(bad_files, 10), collapse = "\n  - "),
+      if (length(bad_files) > 10) "\n  ... (see full list in warnings())" else "",
+      call. = FALSE
+    )
+  }
+
+  out
 }
 
 
@@ -256,6 +284,14 @@ read_ld_data_from_structure <- function(
     default_skip = skip_rows,
     verbose = FALSE
   )
+
+  if (nrow(data_block) == 0) {
+    stop(
+      "No valid PAQXOS distribution tables were read.\n",
+      "Auto-detect likely failed for all files, or files are not PAQXOS exports.",
+      call. = FALSE
+    )
+  }
 
   combined_data <- data_block |>
     dplyr::left_join(metadata, by = "source_file")
