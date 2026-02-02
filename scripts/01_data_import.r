@@ -4,26 +4,16 @@
 # What this does
 #   - Reads Sympatec PAQXOS CSV exports for RODOS (reference) and INHALER (test)
 #   - Reads the 2-row PAQXOS metadata block for BOTH dispersers (consistent ingestion)
+#   - Determines disperser type primarily from CSV metadata ("Dispersing system")
 #   - Standardizes columns and extracts metadata needed for downstream W₁ analysis
 #   - Writes a single tidy CSV for the rest of the pipeline
 #
 # Inputs expected
-#   data_dir/
-#     RODOS/<formulation>/*.csv
-#     INHALER/*.csv   (or INHALER/<formulation>/*.csv also works)
+#   data_dir/  (any structure; subfolders optional)
+#     *.csv
 #
 # Output
 #   <data_dir>/tidy/standardized_data_with_conditions.csv   (default)
-#   Required columns include:
-#     particle_size_um, q3_percent, q3_cdf,
-#     formulation, module, replicate,
-#     device_resistance, pressure_drop_clean,
-#     measurement_time, source_file
-#
-# Key design choices (do not change without intent)
-#   - q3_cdf = q3_percent / 100  (W₁ operates on CDFs in [0,1])
-#   - RODOS is treated as formulation-level reference (condition-independent)
-#   - INHALER replicates are file-level; replicate labels are assigned deterministically
 #
 # How to run
 #   source("scripts/01_data_import.R")   # loads functions
@@ -56,9 +46,13 @@ if (length(.missing_packages) > 0) {
 
 # ==============================================================================
 # INTERNAL: Read 2-row PAQXOS metadata block (row 1 headers, row 2 values)
+#   - Returns one row per file
+#   - All metadata kept as character
+#   - Column names cleaned for stable downstream use
 # ==============================================================================
 .read_paqxos_metadata <- function(files) {
   purrr::map_dfr(files, function(file) {
+
     headers <- readr::read_csv(
       file,
       n_max = 1,
@@ -83,8 +77,11 @@ if (length(.missing_packages) > 0) {
     row <- as.list(values)
     names(row) <- as.character(headers[1, ])
 
-    row$source_file <- file
-    dplyr::as_tibble(row)
+    out <- dplyr::as_tibble(row)
+    out$source_file <- file
+
+    # Clean metadata column names so we can reliably use e.g. dispersing_system
+    janitor::clean_names(out)
   })
 }
 
@@ -94,8 +91,8 @@ if (length(.missing_packages) > 0) {
 # ==============================================================================
 read_ld_data_from_structure <- function(
   data_directory,
-  formulation_pattern = ".*",            # Default: use entire folder name
-  replicate_pattern   = "[Rr]ep_?\\d+",  # rep1, Rep1, rep_1, Rep_1
+  formulation_pattern = ".*",            # Default: use entire folder name (RODOS fallback)
+  replicate_pattern   = "[Rr]ep_?\\d+",  # rep1, Rep1, rep_1, Rep_1 (RODOS fallback)
   skip_rows           = 2,
   module_folders      = c("inhaler", "INHALER", "rodos", "RODOS"),  # kept for API compatibility
   output_dir          = file.path(data_directory, "tidy"),
@@ -145,77 +142,65 @@ read_ld_data_from_structure <- function(
   }
 
   # ---------------------------------------------------------------------------
-  # Split INHALER vs RODOS by path (case-insensitive, path-safe)
+  # Read metadata for ALL files (module comes from PAQXOS metadata)
   # ---------------------------------------------------------------------------
-  inhaler_files <- file_paths[stringr::str_detect(file_paths, "(?i)(^|/)inhaler(/|$)")]
-  rodos_files   <- file_paths[stringr::str_detect(file_paths, "(?i)(^|/)rodos(/|$)")]
+  metadata <- .read_paqxos_metadata(file_paths)
 
-  # If a file matches neither, keep it out (public-safe behavior)
-  other_files <- setdiff(file_paths, c(inhaler_files, rodos_files))
-  if (verbose && length(other_files) > 0) {
-    cat("NOTE: Skipping CSVs not under INHALER/ or RODOS/:\n")
-    cat(paste0("  - ", other_files, collapse = "\n"), "\n\n")
+  # ---------------------------------------------------------------------------
+  # Read data block for ALL files (same PAQXOS structure: 2-row header then data)
+  # ---------------------------------------------------------------------------
+  data_block <- readr::read_csv(
+    file_paths,
+    id = "source_file",
+    skip = skip_rows,
+    col_types = readr::cols(.default = "c"),
+    show_col_types = FALSE
+  ) |>
+    janitor::clean_names()
+
+  combined_data <- data_block |>
+    dplyr::left_join(metadata, by = "source_file")
+
+  # ---------------------------------------------------------------------------
+  # Determine module primarily from metadata "dispersing_system"
+  #   - metadata column becomes dispersing_system after clean_names()
+  #   - fallback to folder-name heuristic only if metadata missing
+  # ---------------------------------------------------------------------------
+  combined_data <- combined_data |>
+    dplyr::mutate(
+      .ds = tolower(dplyr::coalesce(dispersing_system, NA_character_)),
+      module_from_metadata = dplyr::case_when(
+        !is.na(.ds) & stringr::str_detect(.ds, "inhaler") ~ "INHALER",
+        !is.na(.ds) & stringr::str_detect(.ds, "rodos")   ~ "RODOS",
+        TRUE ~ NA_character_
+      ),
+      module_from_path = dplyr::case_when(
+        stringr::str_detect(source_file, "(?i)(^|/)inhaler(/|$)") ~ "INHALER",
+        stringr::str_detect(source_file, "(?i)(^|/)rodos(/|$)")   ~ "RODOS",
+        TRUE ~ NA_character_
+      ),
+      module = dplyr::coalesce(module_from_metadata, module_from_path)
+    )
+
+  # Filter to just files that look like PAQXOS RODOS/INHALER exports
+  kept <- combined_data |>
+    dplyr::distinct(source_file, module) |>
+    dplyr::filter(!is.na(module)) |>
+    dplyr::pull(source_file)
+
+  skipped <- setdiff(unique(combined_data$source_file), kept)
+
+  if (verbose && length(skipped) > 0) {
+    cat("NOTE: Skipping CSVs that do not identify as RODOS/INHALER via metadata or folder:\n")
+    cat(paste0("  - ", skipped, collapse = "\n"), "\n\n")
   }
 
-  # ---------------------------------------------------------------------------
-  # INHALER: metadata (rows 1-2) + data (skip 2)
-  # ---------------------------------------------------------------------------
-  if (length(inhaler_files) > 0) {
-
-    inhaler_metadata <- .read_paqxos_metadata(inhaler_files)
-
-    inhaler_data <- readr::read_csv(
-      inhaler_files,
-      id = "source_file",
-      skip = 2,
-      col_types = readr::cols(.default = "c"),
-      show_col_types = FALSE
-    ) |>
-      janitor::clean_names()
-
-    inhaler_combined <- inhaler_data |>
-      dplyr::left_join(inhaler_metadata, by = "source_file")
-
-    if (verbose && nrow(inhaler_combined) > 0) {
-      cat("DEBUG: INHALER columns after joining:\n")
-      cat(paste(names(inhaler_combined), collapse = ", "), "\n\n")
-    }
-
-  } else {
-    inhaler_combined <- dplyr::tibble()
-  }
+  combined_data <- combined_data |>
+    dplyr::filter(source_file %in% kept)
 
   # ---------------------------------------------------------------------------
-  # RODOS: metadata (rows 1-2) + data (skip skip_rows)
-  #   NOTE: Your RODOS files ALSO have the same 2-row PAQXOS metadata block.
-  #         We ingest it the same way for consistency.
-  # ---------------------------------------------------------------------------
-  if (length(rodos_files) > 0) {
-
-    rodos_metadata <- .read_paqxos_metadata(rodos_files)
-
-    rodos_data <- readr::read_csv(
-      rodos_files,
-      id = "source_file",
-      skip = skip_rows,
-      col_types = readr::cols(.default = "c"),
-      show_col_types = FALSE
-    ) |>
-      janitor::clean_names()
-
-    rodos_combined <- rodos_data |>
-      dplyr::left_join(rodos_metadata, by = "source_file")
-
-  } else {
-    rodos_combined <- dplyr::tibble()
-  }
-
-  # ---------------------------------------------------------------------------
-  # Combine + standardize numeric columns
-  # ---------------------------------------------------------------------------
-  combined_data <- dplyr::bind_rows(inhaler_combined, rodos_combined)
-
   # Basic contract checks (helpful public-facing failures)
+  # ---------------------------------------------------------------------------
   required_raw <- c("xo_mm", "q3_percent")
   missing_raw <- setdiff(required_raw, names(combined_data))
   if (length(missing_raw) > 0) {
@@ -226,6 +211,9 @@ read_ld_data_from_structure <- function(
     )
   }
 
+  # ---------------------------------------------------------------------------
+  # Standardize numeric columns
+  # ---------------------------------------------------------------------------
   combined_data <- combined_data |>
     dplyr::mutate(
       particle_size_um = suppressWarnings(as.numeric(xo_mm)),
@@ -235,65 +223,57 @@ read_ld_data_from_structure <- function(
     dplyr::filter(!is.na(particle_size_um))
 
   # ---------------------------------------------------------------------------
-  # Extract metadata
-  #   - Ingestion is consistent (both join file metadata)
-  #   - Policy for "formulation":
-  #       INHALER uses formulation_id (embedded column)
-  #       RODOS uses folder name (one level up from file)
-  #     (This matches your current project reality and avoids depending on "Product".)
+  # Extract metadata fields for downstream analysis
+  #   - formulation:
+  #       * INHALER: formulation_id if present
+  #       * RODOS: fallback to folder name until re-export adds formulation_id
+  #   - device_resistance / pressure_drop_clean apply only to INHALER
   # ---------------------------------------------------------------------------
   combined_data <- combined_data |>
     dplyr::mutate(
-      is_inhaler = stringr::str_detect(source_file, "(?i)(^|/)inhaler(/|$)"),
-      is_rodos   = stringr::str_detect(source_file, "(?i)(^|/)rodos(/|$)"),
+      is_inhaler = module == "INHALER",
+      is_rodos   = module == "RODOS",
 
       formulation = dplyr::case_when(
-        is_inhaler ~ formulation_id,
-        TRUE       ~ stringr::str_extract(basename(dirname(source_file)), formulation_pattern)
-      ),
-
-      module = dplyr::case_when(
-        is_inhaler ~ "INHALER",
-        is_rodos   ~ "RODOS",
-        TRUE       ~ "UNKNOWN"
+        !is.na(formulation_id) ~ formulation_id,  # works for INHALER now; will work for RODOS after re-export
+        is_rodos ~ stringr::str_extract(basename(dirname(source_file)), formulation_pattern),
+        TRUE     ~ NA_character_
       ),
 
       device_resistance = dplyr::case_when(
-        is_inhaler & !is.na(Device) & stringr::str_detect(Device, "(?i)low")    ~ "low",
-        is_inhaler & !is.na(Device) & stringr::str_detect(Device, "(?i)medium") ~ "medium",
-        is_inhaler & !is.na(Device) & stringr::str_detect(Device, "(?i)high")   ~ "high",
-        !is_inhaler ~ "reference",
-        TRUE        ~ "unknown"
+        is_inhaler & !is.na(device) & stringr::str_detect(device, "(?i)low")    ~ "low",
+        is_inhaler & !is.na(device) & stringr::str_detect(device, "(?i)medium") ~ "medium",
+        is_inhaler & !is.na(device) & stringr::str_detect(device, "(?i)high")   ~ "high",
+        is_rodos   ~ "reference",
+        TRUE       ~ "unknown"
       ),
 
       pressure_drop_clean = dplyr::case_when(
         is_inhaler ~ stringr::str_extract(
-          dplyr::coalesce(pressure_drop, `pressure-drop`),
+          dplyr::coalesce(pressure_drop, `pressure_drop`, `pressure-drop`),
           "\\d+"
         ),
-        !is_inhaler ~ "reference",
-        TRUE        ~ "unknown"
+        is_rodos ~ "reference",
+        TRUE     ~ "unknown"
       ),
 
-      # Prefer Time if present (INHALER has full datetime); otherwise fall back to Identifier.
+      # Prefer Time if present; otherwise fall back to Identifier.
       measurement_time = dplyr::coalesce(
-        as.character(Time),
-        as.character(Identifier)
+        as.character(time),
+        as.character(identifier)
       ),
 
       filename = basename(source_file),
 
-      # RODOS replicate from filename pattern
+      # RODOS replicate from filename pattern (until RODOS exports embed replicate explicitly)
       replicate = dplyr::case_when(
-        !is_inhaler ~ stringr::str_extract(filename, replicate_pattern),
-        TRUE        ~ NA_character_
+        is_rodos ~ stringr::str_extract(filename, replicate_pattern),
+        TRUE     ~ NA_character_
       )
     )
 
   # ---------------------------------------------------------------------------
   # Assign INHALER replicate labels deterministically (file-level)
-  #   - If measurement_time is present, rank by time; otherwise rank by source_file.
-  #   - Uses file-level rank (unique source_file) within each condition.
   # ---------------------------------------------------------------------------
   combined_data <- combined_data |>
     dplyr::group_by(formulation, module, device_resistance, pressure_drop_clean) |>
@@ -331,19 +311,13 @@ read_ld_data_from_structure <- function(
   # Validate extraction (warnings, not hard stops)
   # ---------------------------------------------------------------------------
   if (any(is.na(combined_data$formulation))) {
-    warning("Some files have NA formulation - check formulation_pattern or INHALER formulation_id column")
+    warning("Some files have NA formulation - expected for RODOS until formulation_id is embedded; folder fallback may also be failing.")
   }
   if (any(is.na(combined_data$module))) {
-    warning("Some files have NA module - check directory structure")
+    warning("Some files have NA module - check dispersing_system metadata or file placement.")
   }
   if (any(is.na(combined_data$replicate))) {
-    warning("Some files have NA replicate - check replicate_pattern (RODOS) or INHALER file parsing")
-  }
-  if (any(is.na(combined_data$device_resistance))) {
-    warning("Some INHALER files have NA device_resistance - check Device column")
-  }
-  if (any(is.na(combined_data$pressure_drop_clean))) {
-    warning("Some INHALER files have NA pressure_drop - check pressure_drop column")
+    warning("Some files have NA replicate - check replicate_pattern (RODOS) or INHALER file parsing.")
   }
 
   # ---------------------------------------------------------------------------
@@ -356,15 +330,6 @@ read_ld_data_from_structure <- function(
 
     cat("\nModules found: ", dplyr::n_distinct(combined_data$module), "\n", sep = "")
     print(unique(combined_data$module))
-
-    cat("\nReplicates found: ", dplyr::n_distinct(combined_data$replicate), "\n", sep = "")
-    print(unique(combined_data$replicate))
-
-    cat("\nDevice resistances found: ", dplyr::n_distinct(combined_data$device_resistance), "\n", sep = "")
-    print(unique(combined_data$device_resistance))
-
-    cat("\nPressure drops found: ", dplyr::n_distinct(combined_data$pressure_drop_clean), "\n", sep = "")
-    print(unique(combined_data$pressure_drop_clean))
 
     cat("\nFiles per formulation-module combination:\n")
     print(
