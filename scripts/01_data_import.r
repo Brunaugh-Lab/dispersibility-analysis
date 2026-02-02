@@ -493,14 +493,11 @@ read_ld_data_from_structure <- function(
 
       filename = basename(source_file),
 
-      replicate = dplyr::case_when(
-        is_rodos ~ stringr::str_extract(filename, replicate_pattern),
-        TRUE     ~ NA_character_
-      )
+      replicate = NA_character_
     ) |>
     dplyr::select(-.form_id)
 
-  # Deterministic INHALER replicate labels
+  # Deterministic  replicate labels
   combined_data <- combined_data |>
     dplyr::group_by(formulation, module, device_resistance, pressure_drop_clean) |>
     dplyr::mutate(
@@ -513,10 +510,7 @@ read_ld_data_from_structure <- function(
     dplyr::arrange(.time_key, .by_group = TRUE) |>
     dplyr::mutate(
       .file_rank = dplyr::dense_rank(source_file),
-      replicate = dplyr::case_when(
-        is_inhaler ~ paste0("rep", .file_rank),
-        TRUE       ~ replicate
-      )
+      replicate = paste0("rep", .file_rank)  # Apply to all modules
     ) |>
     dplyr::ungroup() |>
     dplyr::select(
