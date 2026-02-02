@@ -142,11 +142,6 @@ if (length(.missing_packages) > 0) {
 
   nms <- names(df)
 
-  if (verbose) {
-    cat("DEBUG: Column names before standardization:\n")
-    cat("  ", paste(nms, collapse = ", "), "\n", sep = "")
-  }
-
   # --- size bin column (xo / µm) ---
   # janitor::clean_names() converts "xo / µm" to something like "xo_um" or "xo_u_m"
   # Expanded candidates to catch more variants
@@ -185,16 +180,8 @@ if (length(.missing_packages) > 0) {
     ][1]
   }
 
-  if (is.na(q3_found)) {
-    if (verbose) {
-      cat("DEBUG: Could not find Q3 column\n")
-      cat("       Available columns: ", paste(nms, collapse = ", "), "\n", sep = "")
-    }
-  } else {
-    if (verbose) cat("DEBUG: Found Q3 column: ", q3_found, "\n", sep = "")
-    if (q3_found != "q3_percent") {
-      df <- dplyr::rename(df, q3_percent = dplyr::all_of(q3_found))
-    }
+  if (!is.na(q3_found) && q3_found != "q3_percent") {
+    df <- dplyr::rename(df, q3_percent = dplyr::all_of(q3_found))
   }
 
   df
@@ -236,7 +223,7 @@ if (length(.missing_packages) > 0) {
     cleaned_names <- names(df)
 
     # Standardize
-    df <- .standardize_ld_columns(df, verbose = verbose)
+    df <- .standardize_ld_columns(df, verbose = FALSE)
 
     # Basic per-file contract check
     required <- c("xo_mm", "q3_percent")
