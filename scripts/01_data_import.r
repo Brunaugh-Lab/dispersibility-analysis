@@ -5,6 +5,7 @@
 #   - Reads Sympatec PAQXOS CSV exports for RODOS (reference) and INHALER (test)
 #   - Reads the 2-row PAQXOS metadata block for BOTH dispersers (consistent ingestion)
 #   - Determines disperser type primarily from CSV metadata ("Dispersing system")
+#   - AUTO-DETECTS the data-block header line per file (skip_rows becomes per-file)
 #   - Standardizes columns and extracts metadata needed for downstream W₁ analysis
 #   - Writes a single tidy CSV for the rest of the pipeline
 #
@@ -45,6 +46,48 @@ if (length(.missing_packages) > 0) {
 
 
 # ==============================================================================
+# INTERNAL: Detect PAQXOS data-table header row for a single file
+#   - Returns skip value for readr::read_csv() so that the distribution header
+#     (e.g., "xo / µm,Q₃ / %,...") becomes the column header line.
+# ==============================================================================
+.detect_paqxos_skip <- function(file, max_lines = 40, default_skip = 2, verbose = FALSE) {
+
+  lines <- tryCatch(
+    readLines(file, n = max_lines, warn = FALSE),
+    error = function(e) character(0)
+  )
+
+  if (length(lines) == 0) {
+    if (verbose) cat("WARN: Could not read lines for skip detection: ", file, "\n", sep = "")
+    return(default_skip)
+  }
+
+  # Normalize: lowercase, trim whitespace
+  l <- stringr::str_trim(tolower(lines))
+
+  # Heuristic: the distribution header line contains "xo" and "q" and looks like comma-separated headers.
+  # We include variants to tolerate micro symbol conversions (µ -> u or removed).
+  is_header <- stringr::str_detect(l, "^xo\\s*/") |
+    stringr::str_detect(l, "^xo\\s*,") |
+    (stringr::str_detect(l, "\\bxo\\b") & stringr::str_detect(l, "q") & stringr::str_detect(l, ","))
+
+  idx <- which(is_header)[1]
+
+  if (is.na(idx)) {
+    if (verbose) {
+      cat("WARN: Could not auto-detect PAQXOS header row; using default skip=",
+          default_skip, " for ", file, "\n", sep = "")
+    }
+    return(default_skip)
+  }
+
+  # readr::read_csv(skip = k-1) will read line k as header row
+  skip <- max(idx - 1, 0)
+  skip
+}
+
+
+# ==============================================================================
 # INTERNAL: Read 2-row PAQXOS metadata block (row 1 headers, row 2 values)
 #   - Returns one row per file
 #   - All metadata kept as character
@@ -80,8 +123,33 @@ if (length(.missing_packages) > 0) {
     out <- dplyr::as_tibble(row)
     out$source_file <- file
 
-    # Clean metadata column names so we can reliably use e.g. dispersing_system
     janitor::clean_names(out)
+  })
+}
+
+
+# ==============================================================================
+# INTERNAL: Read PAQXOS distribution data block for each file (auto-skip)
+# ==============================================================================
+.read_paqxos_data_block <- function(files, default_skip = 2, verbose = FALSE) {
+
+  purrr::map_dfr(files, function(file) {
+    skip <- .detect_paqxos_skip(file, default_skip = default_skip, verbose = verbose)
+
+    if (verbose) {
+      cat("Reading data block: skip=", skip, "  file=", file, "\n", sep = "")
+    }
+
+    df <- readr::read_csv(
+      file,
+      skip = skip,
+      col_types = readr::cols(.default = "c"),
+      show_col_types = FALSE
+    ) |>
+      janitor::clean_names()
+
+    df$source_file <- file
+    df
   })
 }
 
@@ -93,26 +161,23 @@ read_ld_data_from_structure <- function(
   data_directory,
   formulation_pattern = ".*",            # Default: use entire folder name (RODOS fallback)
   replicate_pattern   = "[Rr]ep_?\\d+",  # rep1, Rep1, rep_1, Rep_1 (RODOS fallback)
-  skip_rows           = 2,
-  module_folders      = c("inhaler", "INHALER", "rodos", "RODOS"),  # kept for API compatibility
+  skip_rows           = 2,               # used as default fallback if auto-detect fails
+  module_folders      = c("inhaler", "INHALER", "rodos", "RODOS"),  # API compatibility
   output_dir          = file.path(data_directory, "tidy"),
   save_output         = TRUE,
   output_filename     = "standardized_data_with_conditions.csv",
   verbose             = TRUE
 ) {
 
-  # Validate inputs
   if (!dir.exists(data_directory)) {
     stop("Data directory does not exist: ", data_directory, call. = FALSE)
   }
 
-  # Create output directory if it doesn't exist
   if (save_output && !dir.exists(output_dir)) {
     dir.create(output_dir, recursive = TRUE)
     if (verbose) cat("Created output directory: ", output_dir, "\n", sep = "")
   }
 
-  # Find all CSV files recursively
   file_paths <- list.files(
     path = data_directory,
     pattern = "\\.csv$",
@@ -124,7 +189,6 @@ read_ld_data_from_structure <- function(
     stop("No CSV files found in ", data_directory, call. = FALSE)
   }
 
-  # Normalize paths so detection works on Windows too
   file_paths <- normalizePath(file_paths, winslash = "/", mustWork = FALSE)
 
   if (verbose) {
@@ -133,7 +197,7 @@ read_ld_data_from_structure <- function(
     cat("========================================================================\n")
     cat("Data directory: ", data_directory, "\n", sep = "")
     cat("CSV files found: ", length(file_paths), "\n", sep = "")
-    cat("Skip rows: ", skip_rows, "\n", sep = "")
+    cat("Default skip_rows fallback: ", skip_rows, "\n", sep = "")
     if (save_output) {
       cat("Output directory: ", output_dir, "\n", sep = "")
       cat("Output file: ", file.path(output_dir, output_filename), "\n", sep = "")
@@ -141,31 +205,20 @@ read_ld_data_from_structure <- function(
     cat("------------------------------------------------------------------------\n\n")
   }
 
-  # ---------------------------------------------------------------------------
-  # Read metadata for ALL files (module comes from PAQXOS metadata)
-  # ---------------------------------------------------------------------------
+  # Read metadata for ALL files
   metadata <- .read_paqxos_metadata(file_paths)
 
-  # ---------------------------------------------------------------------------
-  # Read data block for ALL files (same PAQXOS structure: 2-row header then data)
-  # ---------------------------------------------------------------------------
-  data_block <- readr::read_csv(
+  # Read distribution data block for ALL files (auto-detect skip per file)
+  data_block <- .read_paqxos_data_block(
     file_paths,
-    id = "source_file",
-    skip = skip_rows,
-    col_types = readr::cols(.default = "c"),
-    show_col_types = FALSE
-  ) |>
-    janitor::clean_names()
+    default_skip = skip_rows,
+    verbose = FALSE
+  )
 
   combined_data <- data_block |>
     dplyr::left_join(metadata, by = "source_file")
 
-  # ---------------------------------------------------------------------------
   # Determine module primarily from metadata "dispersing_system"
-  #   - metadata column becomes dispersing_system after clean_names()
-  #   - fallback to folder-name heuristic only if metadata missing
-  # ---------------------------------------------------------------------------
   combined_data <- combined_data |>
     dplyr::mutate(
       .ds = tolower(dplyr::coalesce(dispersing_system, NA_character_)),
@@ -182,7 +235,7 @@ read_ld_data_from_structure <- function(
       module = dplyr::coalesce(module_from_metadata, module_from_path)
     )
 
-  # Filter to just files that look like PAQXOS RODOS/INHALER exports
+  # Keep only PAQXOS-like RODOS/INHALER exports
   kept <- combined_data |>
     dplyr::distinct(source_file, module) |>
     dplyr::filter(!is.na(module)) |>
@@ -198,22 +251,19 @@ read_ld_data_from_structure <- function(
   combined_data <- combined_data |>
     dplyr::filter(source_file %in% kept)
 
-  # ---------------------------------------------------------------------------
-  # Basic contract checks (helpful public-facing failures)
-  # ---------------------------------------------------------------------------
+  # Contract checks
   required_raw <- c("xo_mm", "q3_percent")
   missing_raw <- setdiff(required_raw, names(combined_data))
   if (length(missing_raw) > 0) {
     stop(
       "Missing expected PAQXOS columns: ", paste(missing_raw, collapse = ", "),
-      "\nCheck your PAQXOS export format and/or skip_rows setting.",
+      "\nAuto-detect may have failed to find the distribution header row for some files.",
+      "\nTry increasing max_lines in .detect_paqxos_skip() or inspect one failing export.",
       call. = FALSE
     )
   }
 
-  # ---------------------------------------------------------------------------
   # Standardize numeric columns
-  # ---------------------------------------------------------------------------
   combined_data <- combined_data |>
     dplyr::mutate(
       particle_size_um = suppressWarnings(as.numeric(xo_mm)),
@@ -222,13 +272,7 @@ read_ld_data_from_structure <- function(
     ) |>
     dplyr::filter(!is.na(particle_size_um))
 
-  # ---------------------------------------------------------------------------
-  # Extract metadata fields for downstream analysis
-  #   - formulation:
-  #       * INHALER: formulation_id if present
-  #       * RODOS: fallback to folder name until re-export adds formulation_id
-  #   - device_resistance / pressure_drop_clean apply only to INHALER
-  # ---------------------------------------------------------------------------
+  # Extract metadata used downstream
   combined_data <- combined_data |>
     dplyr::mutate(
       is_inhaler = module == "INHALER",
@@ -257,7 +301,6 @@ read_ld_data_from_structure <- function(
         TRUE     ~ "unknown"
       ),
 
-      # Prefer Time if present; otherwise fall back to Identifier.
       measurement_time = dplyr::coalesce(
         as.character(time),
         as.character(identifier)
@@ -265,16 +308,13 @@ read_ld_data_from_structure <- function(
 
       filename = basename(source_file),
 
-      # RODOS replicate from filename pattern (until RODOS exports embed replicate explicitly)
       replicate = dplyr::case_when(
         is_rodos ~ stringr::str_extract(filename, replicate_pattern),
         TRUE     ~ NA_character_
       )
     )
 
-  # ---------------------------------------------------------------------------
-  # Assign INHALER replicate labels deterministically (file-level)
-  # ---------------------------------------------------------------------------
+  # Deterministic INHALER replicate labels
   combined_data <- combined_data |>
     dplyr::group_by(formulation, module, device_resistance, pressure_drop_clean) |>
     dplyr::mutate(
@@ -307,22 +347,15 @@ read_ld_data_from_structure <- function(
     ) |>
     dplyr::mutate(replicate = tolower(replicate))
 
-  # ---------------------------------------------------------------------------
-  # Validate extraction (warnings, not hard stops)
-  # ---------------------------------------------------------------------------
+  # Warnings
   if (any(is.na(combined_data$formulation))) {
     warning("Some files have NA formulation - expected for RODOS until formulation_id is embedded; folder fallback may also be failing.")
-  }
-  if (any(is.na(combined_data$module))) {
-    warning("Some files have NA module - check dispersing_system metadata or file placement.")
   }
   if (any(is.na(combined_data$replicate))) {
     warning("Some files have NA replicate - check replicate_pattern (RODOS) or INHALER file parsing.")
   }
 
-  # ---------------------------------------------------------------------------
-  # Print summary
-  # ---------------------------------------------------------------------------
+  # Summary
   if (verbose) {
     cat("Data extraction summary:\n")
     cat("\nFormulations found: ", dplyr::n_distinct(combined_data$formulation), "\n", sep = "")
@@ -348,9 +381,7 @@ read_ld_data_from_structure <- function(
     cat("========================================================================\n\n")
   }
 
-  # ---------------------------------------------------------------------------
   # Save output
-  # ---------------------------------------------------------------------------
   if (save_output) {
     output_path <- file.path(output_dir, output_filename)
     readr::write_csv(combined_data, output_path)
@@ -513,18 +544,3 @@ run_data_import <- function(
 
   data
 }
-
-
-# ==============================================================================
-# Example usage (no auto-execution)
-# ==============================================================================
-#
-# source("scripts/01_data_import.R")
-# data <- run_data_import("data")
-#
-# # Fast reload:
-# # data <- load_standardized_data(
-# #   processed_dir = "data/tidy",
-# #   filename = "standardized_data_with_conditions.csv"
-# # )
-#
