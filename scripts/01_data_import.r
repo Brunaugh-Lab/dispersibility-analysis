@@ -158,16 +158,8 @@ if (length(.missing_packages) > 0) {
     size_found <- nms[stringr::str_detect(nms, "^xo($|_)")][1]
   }
 
-  if (is.na(size_found)) {
-    if (verbose) {
-      cat("DEBUG: Could not find size column matching xo pattern\n")
-      cat("       Available columns: ", paste(nms, collapse = ", "), "\n", sep = "")
-    }
-  } else {
-    if (verbose) cat("DEBUG: Found size column: ", size_found, "\n", sep = "")
-    if (size_found != "xo_mm") {
-      df <- dplyr::rename(df, xo_mm = dplyr::all_of(size_found))
-    }
+  if (!is.na(size_found) && size_found != "xo_mm") {
+    df <- dplyr::rename(df, xo_mm = dplyr::all_of(size_found))
   }
 
   # --- Q3 percent column (Q₃ / %) ---
