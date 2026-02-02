@@ -68,7 +68,7 @@ if (length(.missing_packages) > 0) {
   # Stronger heuristic: true PAQXOS header must contain BOTH xo and q3 on the same line,
   # plus commas. This avoids false positives from metadata rows.
   has_xo     <- stringr::str_detect(l, "\\bxo\\b")
-  has_q3     <- stringr::str_detect(l, "\\bq\\s*3\\b|q₃|q3")
+  has_q3 <- stringr::str_detect(l, "q\\s*[3₃³]")
   has_comma <- stringr::str_detect(l, ",")
 
   is_header <- stringr::str_detect(l, "^xo\\s*([,/]|\\s)") &
@@ -128,7 +128,10 @@ if (length(.missing_packages) > 0) {
     out <- dplyr::as_tibble(row)
     out$source_file <- file
 
-    janitor::clean_names(out, replace = c("µ" = "u", "μ" = "u", "\u00b5" = "u"))
+    janitor::clean_names(out, replace = c(
+      "µ" = "u", "μ" = "u", "\u00b5" = "u",
+      "₃" = "3", "³" = "3"
+    ))
   })
 }
 
@@ -137,16 +140,35 @@ if (length(.missing_packages) > 0) {
 # ==============================================================================
 .standardize_ld_columns <- function(df) {
 
-  # size bin column (xo / µm) can normalize differently across systems
+  nms <- names(df)
+
+  # --- size bin column (xo / µm) ---
+  # Prefer exact known variants first
   size_candidates <- c("xo_mm", "xo_um", "xo_m", "xo")
-  size_found <- size_candidates[size_candidates %in% names(df)][1]
+  size_found <- size_candidates[size_candidates %in% nms][1]
+
+  # If not found, fall back to pattern (starts with xo)
+  if (is.na(size_found)) {
+    size_found <- nms[stringr::str_detect(nms, "^xo($|_)")][1]
+  }
+
   if (!is.na(size_found) && size_found != "xo_mm") {
     df <- dplyr::rename(df, xo_mm = dplyr::all_of(size_found))
   }
 
-  # Q3 percent column (Q₃ / %) sometimes becomes q_3_percent
+  # --- Q3 percent column (Q₃ / %) ---
+  # Known variants first
   q3_candidates <- c("q3_percent", "q_3_percent", "q3_pct", "q_3_pct")
-  q3_found <- q3_candidates[q3_candidates %in% names(df)][1]
+  q3_found <- q3_candidates[q3_candidates %in% nms][1]
+
+  # Pattern fallback: starts with q and contains percent or pct
+  if (is.na(q3_found)) {
+    q3_found <- nms[
+      stringr::str_detect(nms, "^q") &
+        (stringr::str_detect(nms, "percent") | stringr::str_detect(nms, "pct"))
+    ][1]
+  }
+
   if (!is.na(q3_found) && q3_found != "q3_percent") {
     df <- dplyr::rename(df, q3_percent = dplyr::all_of(q3_found))
   }
@@ -174,7 +196,10 @@ if (length(.missing_packages) > 0) {
         name_repair = "minimal"
       )
     ) |>
-      janitor::clean_names(replace = c("µ" = "u", "μ" = "u", "\u00b5" = "u")) |>
+      janitor::clean_names(replace = c(
+        "µ" = "u", "μ" = "u", "\u00b5" = "u",
+        "₃" = "3", "³" = "3"
+      )) |>
       .standardize_ld_columns()
 
     # Basic per-file contract check
