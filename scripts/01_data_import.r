@@ -158,3 +158,16 @@ run_data_import <- function(
   return(data)
 }
 
+# ==============================================================================
+# Example usage (no auto-execution)
+# ==============================================================================
+#
+# source("scripts/01_data_import.R")
+# data <- run_data_import("data")
+#
+# # Fast reload:
+# # data <- load_standardized_data(
+# #   processed_dir = "data/tidy",
+# #   filename = "standardized_data_with_conditions.csv"
+# # )
+#
