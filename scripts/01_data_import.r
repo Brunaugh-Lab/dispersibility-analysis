@@ -123,7 +123,7 @@ if (length(.missing_packages) > 0) {
     out <- dplyr::as_tibble(row)
     out$source_file <- file
 
-    janitor::clean_names(out)
+    janitor::clean_names(out, replace = c("µ" = "u", "μ" = "u", "\u00b5" = "u"))
   })
 }
 
@@ -167,7 +167,7 @@ if (length(.missing_packages) > 0) {
         name_repair = "minimal"   # reduce "New names" chatter
       )
     ) |>
-      janitor::clean_names() |>
+      janitor::clean_names(replace = c("µ" = "u", "μ" = "u", "\u00b5" = "u")) |>
       .standardize_ld_columns()
 
     df$source_file <- file
@@ -486,13 +486,16 @@ validate_ld_data <- function(data, check_replicates = TRUE, min_replicates = 3) 
       )
     )
 
-  if (any(na_counts > 0)) {
+  na_counts_vec <- unlist(na_counts, use.names = FALSE)
+
+  if (any(na_counts_vec > 0)) {
     cat("\nWARNING: NA values detected:\n")
     print(na_counts)
     all_valid <- FALSE
   } else {
     cat("✓ No NA values in key columns\n")
   }
+
 
   if (any(data$q3_cdf < 0, na.rm = TRUE) || any(data$q3_cdf > 1, na.rm = TRUE)) {
     cat("\nWARNING: q3_cdf values outside [0,1] range\n")
