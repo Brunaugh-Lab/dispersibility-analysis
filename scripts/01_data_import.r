@@ -136,14 +136,21 @@ if (length(.missing_packages) > 0) {
 
 # ==============================================================================
 # INTERNAL: Standardize PAQXOS column name variants after janitor::clean_names()
+#   FIXED VERSION - more flexible pattern matching
 # ==============================================================================
-.standardize_ld_columns <- function(df) {
+.standardize_ld_columns <- function(df, verbose = FALSE) {
 
   nms <- names(df)
 
+  if (verbose) {
+    cat("DEBUG: Column names before standardization:\n")
+    cat("  ", paste(nms, collapse = ", "), "\n", sep = "")
+  }
+
   # --- size bin column (xo / µm) ---
-  # Prefer exact known variants first
-  size_candidates <- c("xo_mm", "xo_um", "xo_m", "xo")
+  # janitor::clean_names() converts "xo / µm" to something like "xo_um" or "xo_u_m"
+  # Expanded candidates to catch more variants
+  size_candidates <- c("xo_mm", "xo_um", "xo_u_m", "xo_m", "xo")
   size_found <- size_candidates[size_candidates %in% nms][1]
 
   # If not found, fall back to pattern (starts with xo)
@@ -151,25 +158,51 @@ if (length(.missing_packages) > 0) {
     size_found <- nms[stringr::str_detect(nms, "^xo($|_)")][1]
   }
 
-  if (!is.na(size_found) && size_found != "xo_mm") {
-    df <- dplyr::rename(df, xo_mm = dplyr::all_of(size_found))
+  if (is.na(size_found)) {
+    if (verbose) {
+      cat("DEBUG: Could not find size column matching xo pattern\n")
+      cat("       Available columns: ", paste(nms, collapse = ", "), "\n", sep = "")
+    }
+  } else {
+    if (verbose) cat("DEBUG: Found size column: ", size_found, "\n", sep = "")
+    if (size_found != "xo_mm") {
+      df <- dplyr::rename(df, xo_mm = dplyr::all_of(size_found))
+    }
   }
 
   # --- Q3 percent column (Q₃ / %) ---
-  # Known variants first
-  q3_candidates <- c("q3_percent", "q_3_percent", "q3_pct", "q_3_pct")
+  # janitor::clean_names() converts "Q₃ / %" to something like "q_3_percent" or "q3_percent"
+  # Expanded candidates and patterns
+  q3_candidates <- c("q3_percent", "q_3_percent", "q3_pct", "q_3_pct", "q_3")
   q3_found <- q3_candidates[q3_candidates %in% nms][1]
 
-  # Pattern fallback: starts with q and contains percent or pct
+  # Pattern fallback: more flexible - starts with q and optionally contains 3, percent, or pct
   if (is.na(q3_found)) {
+    # First try: q followed by optional underscore/3 and contains "percent"
     q3_found <- nms[
-      stringr::str_detect(nms, "^q") &
-        (stringr::str_detect(nms, "percent") | stringr::str_detect(nms, "pct"))
+      stringr::str_detect(nms, "^q(_?3)?(_|$)") &
+        stringr::str_detect(nms, "percent|pct")
     ][1]
   }
 
-  if (!is.na(q3_found) && q3_found != "q3_percent") {
-    df <- dplyr::rename(df, q3_percent = dplyr::all_of(q3_found))
+  # Second fallback: just starts with q and has 3 somewhere
+  if (is.na(q3_found)) {
+    q3_found <- nms[
+      stringr::str_detect(nms, "^q") &
+        stringr::str_detect(nms, "3")
+    ][1]
+  }
+
+  if (is.na(q3_found)) {
+    if (verbose) {
+      cat("DEBUG: Could not find Q3 column\n")
+      cat("       Available columns: ", paste(nms, collapse = ", "), "\n", sep = "")
+    }
+  } else {
+    if (verbose) cat("DEBUG: Found Q3 column: ", q3_found, "\n", sep = "")
+    if (q3_found != "q3_percent") {
+      df <- dplyr::rename(df, q3_percent = dplyr::all_of(q3_found))
+    }
   }
 
   df
@@ -177,10 +210,12 @@ if (length(.missing_packages) > 0) {
 
 # ==============================================================================
 # INTERNAL: Read PAQXOS distribution data block for each file (auto-skip)
+#   FIXED VERSION - includes diagnostic output
 # ==============================================================================
 .read_paqxos_data_block <- function(files, default_skip = 2, verbose = FALSE) {
 
   bad_files <- character(0)
+  diagnostic_info <- list()
 
   out <- purrr::map_dfr(files, function(file) {
 
@@ -194,17 +229,33 @@ if (length(.missing_packages) > 0) {
         show_col_types = FALSE,
         name_repair = "minimal"
       )
-    ) |>
+    )
+
+    # Store original column names for diagnostics
+    original_names <- names(df)
+
+    # Clean names
+    df <- df |>
       janitor::clean_names(replace = c(
         "µ" = "u", "μ" = "u", "\u00b5" = "u",
         "₃" = "3", "³" = "3"
-      )) |>
-      .standardize_ld_columns()
+      ))
+
+    cleaned_names <- names(df)
+
+    # Standardize
+    df <- .standardize_ld_columns(df, verbose = verbose)
 
     # Basic per-file contract check
     required <- c("xo_mm", "q3_percent")
     if (!all(required %in% names(df))) {
       bad_files <<- c(bad_files, file)
+      diagnostic_info[[file]] <<- list(
+        original = original_names,
+        cleaned = cleaned_names,
+        final = names(df),
+        missing = setdiff(required, names(df))
+      )
       return(dplyr::tibble())  # skip this file cleanly
     }
 
@@ -212,14 +263,26 @@ if (length(.missing_packages) > 0) {
     df
   })
 
-  # Emit a single useful warning with the file list
+  # Emit detailed diagnostic warning
   if (length(bad_files) > 0) {
     warning(
       "Skipped ", length(bad_files), " CSV(s) that did not contain expected PAQXOS columns ",
-      "(xo_mm + q3_percent) after auto-detect.\n",
-      "First few:\n  - ",
-      paste(utils::head(bad_files, 10), collapse = "\n  - "),
-      if (length(bad_files) > 10) "\n  ... (see full list in warnings())" else "",
+      "(xo_mm + q3_percent) after auto-detect.\n\n",
+      "DIAGNOSTIC INFO for first file:\n",
+      if (length(diagnostic_info) > 0) {
+        first_file <- names(diagnostic_info)[1]
+        info <- diagnostic_info[[first_file]]
+        paste0(
+          "  File: ", basename(first_file), "\n",
+          "  Original columns: ", paste(info$original[1:min(5, length(info$original))], collapse = ", "), "\n",
+          "  After clean_names: ", paste(info$cleaned[1:min(5, length(info$cleaned))], collapse = ", "), "\n",
+          "  After standardize: ", paste(info$final[1:min(5, length(info$final))], collapse = ", "), "\n",
+          "  Missing: ", paste(info$missing, collapse = ", "), "\n"
+        )
+      } else "",
+      "\nFirst few file paths:\n  - ",
+      paste(utils::head(basename(bad_files), 5), collapse = "\n  - "),
+      if (length(bad_files) > 5) "\n  ... (and more)" else "",
       call. = FALSE
     )
   }
@@ -248,172 +311,184 @@ read_ld_data_from_structure <- function(
   }
 
   if (save_output && !dir.exists(output_dir)) {
-    dir.create(output_dir, recursive = TRUE)
+    dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
     if (verbose) cat("Created output directory: ", output_dir, "\n", sep = "")
   }
-
-  file_paths <- list.files(
-    path = data_directory,
-    pattern = "\\.csv$",
-    recursive = TRUE,
-    full.names = TRUE
-  )
-
-  if (length(file_paths) == 0) {
-    stop("No CSV files found in ", data_directory, call. = FALSE)
-  }
-
-  # Normalize paths so detection works on Windows too
-  file_paths <- normalizePath(file_paths, winslash = "/", mustWork = FALSE)
-
-  # Exclude generated outputs from being re-read as inputs
-  output_dir_norm <- normalizePath(output_dir, winslash = "/", mustWork = FALSE)
-
-  file_paths <- file_paths[
-    !stringr::str_detect(file_paths, paste0("^", stringr::fixed(output_dir_norm), "(/|$)"))
-  ]
-
-  # Extra safety: also exclude the output filename anywhere it appears
-  file_paths <- file_paths[basename(file_paths) != output_filename]
-
-  if (length(file_paths) == 0) {
-    stop(
-      "No input PAQXOS CSV files found after excluding output_dir/output file.\n",
-      "Check your data_directory and folder structure.",
-      call. = FALSE
-    )
-  }
-
 
   if (verbose) {
     cat("\n========================================================================\n")
     cat("READING LASER DIFFRACTION DATA\n")
     cat("========================================================================\n")
     cat("Data directory: ", data_directory, "\n", sep = "")
-    cat("CSV files found: ", length(file_paths), "\n", sep = "")
-    cat("Default skip_rows fallback: ", skip_rows, "\n", sep = "")
-    if (save_output) {
-      cat("Output directory: ", output_dir, "\n", sep = "")
-      cat("Output file: ", file.path(output_dir, output_filename), "\n", sep = "")
-    }
-    cat("------------------------------------------------------------------------\n\n")
   }
 
-  # Read metadata for ALL files
-  metadata <- .read_paqxos_metadata(file_paths)
+  # --- File discovery (exclude tidy/ outputs to avoid re-ingestion) ---
+  all_csv_files <- list.files(
+    data_directory,
+    pattern = "\\.csv$",
+    full.names = TRUE,
+    recursive = TRUE,
+    ignore.case = TRUE
+  )
 
-  # Read distribution data block for ALL files (auto-detect skip per file)
+  tidy_pattern <- paste0(
+    "[\\/\\\\]", basename(output_dir), "[\\/\\\\]"
+  )
+
+  csv_files <- all_csv_files[
+    !stringr::str_detect(all_csv_files, tidy_pattern)
+  ]
+
+  if (length(csv_files) == 0) {
+    stop("No CSV files found in ", data_directory, call. = FALSE)
+  }
+
+  if (verbose) {
+    cat("Total CSV files found: ", length(csv_files), "\n", sep = "")
+    if (length(all_csv_files) > length(csv_files)) {
+      cat("Excluded outputs in /tidy/: ",
+          length(all_csv_files) - length(csv_files), "\n", sep = "")
+    }
+  }
+
+  # --- Read metadata block (rows 1–2) ---
+  if (verbose) cat("\nReading PAQXOS metadata (rows 1-2)...\n")
+  metadata <- .read_paqxos_metadata(csv_files)
+
+  if (verbose) {
+    cat("Files with metadata: ", nrow(metadata), "\n", sep = "")
+  }
+
+  # --- Read distribution data block (auto-detect header row) ---
+  if (verbose) cat("\nReading distribution data blocks (auto-detecting skip rows)...\n")
   data_block <- .read_paqxos_data_block(
-    file_paths,
+    csv_files,
     default_skip = skip_rows,
-    verbose = FALSE
+    verbose = verbose
   )
 
   if (nrow(data_block) == 0) {
     stop(
-      "No valid PAQXOS distribution tables were read.\n",
-      "Auto-detect likely failed for all files, or files are not PAQXOS exports.",
+      "No valid PAQXOS distribution data found. Check CSV structure and column names.",
       call. = FALSE
     )
   }
 
-  combined_data <- data_block |>
-    dplyr::left_join(metadata, by = "source_file")
-
-  # Determine module primarily from metadata "dispersing_system"
-  combined_data <- combined_data |>
-    dplyr::mutate(
-      .ds = tolower(dplyr::coalesce(dispersing_system, NA_character_)),
-      module_from_metadata = dplyr::case_when(
-        !is.na(.ds) & stringr::str_detect(.ds, "inhaler") ~ "INHALER",
-        !is.na(.ds) & stringr::str_detect(.ds, "rodos")   ~ "RODOS",
-        TRUE ~ NA_character_
-      ),
-      module_from_path = dplyr::case_when(
-        stringr::str_detect(source_file, "(?i)(^|/)inhaler(/|$)") ~ "INHALER",
-        stringr::str_detect(source_file, "(?i)(^|/)rodos(/|$)")   ~ "RODOS",
-        TRUE ~ NA_character_
-      ),
-      module = dplyr::coalesce(module_from_metadata, module_from_path)
-    )
-
-  # Keep only PAQXOS-like RODOS/INHALER exports
-  kept <- combined_data |>
-    dplyr::distinct(source_file, module) |>
-    dplyr::filter(!is.na(module)) |>
-    dplyr::pull(source_file)
-
-  skipped <- setdiff(unique(combined_data$source_file), kept)
-
-  if (verbose && length(skipped) > 0) {
-    cat("NOTE: Skipping CSVs that do not identify as RODOS/INHALER via metadata or folder:\n")
-    cat(paste0("  - ", skipped, collapse = "\n"), "\n\n")
+  if (verbose) {
+    cat("Files with valid data blocks: ",
+        dplyr::n_distinct(data_block$source_file), "\n", sep = "")
   }
 
-  combined_data <- combined_data |>
-    dplyr::filter(source_file %in% kept)
+  # --- Join metadata + data ---
+  combined_data <- dplyr::inner_join(
+    data_block,
+    metadata,
+    by = "source_file",
+    suffix = c("", "_meta")
+  )
 
-  # Contract checks
-  required_raw <- c("xo_mm", "q3_percent")
-  missing_raw <- setdiff(required_raw, names(combined_data))
-  if (length(missing_raw) > 0) {
+  if (nrow(combined_data) == 0) {
     stop(
-      "Missing expected PAQXOS columns: ", paste(missing_raw, collapse = ", "),
-      "\nAuto-detect may have failed to find the distribution header row for some files.",
-      "\nTry increasing max_lines in .detect_paqxos_skip() or inspect one failing export.",
+      "No data after joining metadata and distribution blocks. ",
+      "Check that source_file paths match exactly.",
       call. = FALSE
     )
   }
 
-  # Standardize numeric columns
+  if (verbose) {
+    cat("Rows after joining metadata + data: ", nrow(combined_data), "\n", sep = "")
+  }
+
+  # --- Numeric conversion + CDF ---
   combined_data <- combined_data |>
     dplyr::mutate(
       particle_size_um = suppressWarnings(as.numeric(xo_mm)),
       q3_percent       = suppressWarnings(as.numeric(q3_percent)),
       q3_cdf           = q3_percent / 100
     ) |>
-    dplyr::filter(!is.na(particle_size_um))
+    dplyr::filter(
+      !is.na(particle_size_um),
+      !is.na(q3_percent),
+      particle_size_um > 0
+    )
 
-
-  # Ensure expected metadata columns exist (avoids hard-fail on missing columns)
-  if (!("pressure_drop" %in% names(combined_data))) combined_data$pressure_drop <- NA_character_
-  if (!("device"        %in% names(combined_data))) combined_data$device        <- NA_character_
-  if (!("formulation_id" %in% names(combined_data))) combined_data$formulation_id <- NA_character_
-
-  # Extract metadata used downstream
+  # --- Module classification (disperser type) ---
   combined_data <- combined_data |>
     dplyr::mutate(
-      is_inhaler = module == "INHALER",
-      is_rodos   = module == "RODOS",
+      dispersing_system_clean = stringr::str_trim(
+        tolower(
+          dplyr::coalesce(dispersing_system, "")
+        )
+      ),
+      is_rodos   = stringr::str_detect(dispersing_system_clean, "rodos"),
+      is_inhaler = stringr::str_detect(dispersing_system_clean, "inhaler"),
 
-      # formulation_id is now the primary source for BOTH dispersers
-      .form_id = dplyr::na_if(formulation_id, ""),
-      .form_id = dplyr::na_if(.form_id, "NA"),
-      .form_id = dplyr::na_if(.form_id, "na"),
+      # Folder-based fallback
+      folder = dirname(source_file),
+      is_rodos = dplyr::case_when(
+        is_rodos ~ TRUE,
+        stringr::str_detect(tolower(folder), "rodos") ~ TRUE,
+        TRUE ~ is_rodos
+      ),
+      is_inhaler = dplyr::case_when(
+        is_inhaler ~ TRUE,
+        stringr::str_detect(tolower(folder), "inhaler") ~ TRUE,
+        TRUE ~ is_inhaler
+      ),
 
-      formulation = dplyr::coalesce(
-        .form_id,
-        # legacy/public fallback: folder name
-        stringr::str_extract(basename(dirname(source_file)), formulation_pattern)
+      # Require exactly one disperser type
+      .is_ambiguous = is_rodos & is_inhaler,
+      .is_unknown   = !(is_rodos | is_inhaler),
+
+      module = dplyr::case_when(
+        .is_ambiguous ~ NA_character_,
+        .is_unknown   ~ NA_character_,
+        is_rodos      ~ "RODOS",
+        is_inhaler    ~ "INHALER",
+        TRUE          ~ NA_character_
+      )
+    ) |>
+    dplyr::filter(!is.na(module))
+
+  if (verbose) {
+    cat("Files classified as RODOS or INHALER: ",
+        dplyr::n_distinct(combined_data$source_file), "\n", sep = "")
+  }
+
+  # --- Extract analysis-relevant metadata ---
+  combined_data <- combined_data |>
+    dplyr::mutate(
+      .form_id = dplyr::coalesce(formulation_id, NA_character_),
+      formulation = dplyr::case_when(
+        !is.na(.form_id) ~ .form_id,
+        TRUE ~ stringr::str_extract(
+          basename(dirname(source_file)),
+          formulation_pattern
+        )
       ),
 
       device_resistance = dplyr::case_when(
-        is_inhaler & !is.na(device) & stringr::str_detect(device, "(?i)low")    ~ "low",
-        is_inhaler & !is.na(device) & stringr::str_detect(device, "(?i)medium") ~ "medium",
-        is_inhaler & !is.na(device) & stringr::str_detect(device, "(?i)high")   ~ "high",
-        is_rodos   ~ "reference",
-        TRUE       ~ "unknown"
+        is_rodos ~ "reference",
+        TRUE     ~ dplyr::case_when(
+          stringr::str_detect(tolower(device), "low")    ~ "low",
+          stringr::str_detect(tolower(device), "medium") ~ "medium",
+          stringr::str_detect(tolower(device), "high")   ~ "high",
+          TRUE ~ NA_character_
+        )
       ),
 
       pressure_drop_clean = dplyr::case_when(
-        is_inhaler ~ stringr::str_extract(pressure_drop, "\\d+"),
-        is_rodos   ~ "reference",
-        TRUE       ~ "unknown"
+        is_rodos ~ NA_real_,
+        TRUE     ~ suppressWarnings(
+          as.numeric(
+            stringr::str_extract(pressure_drop, "\\d+(\\.\\d+)?")
+          )
+        )
       ),
 
       measurement_time = dplyr::coalesce(
-        as.character(time),
-        as.character(identifier)
+        time,
+        stringr::str_extract(identifier, "\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}")
       ),
 
       filename = basename(source_file),
