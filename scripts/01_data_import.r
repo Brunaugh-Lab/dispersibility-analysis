@@ -65,14 +65,13 @@ if (length(.missing_packages) > 0) {
   # Normalize: lowercase, trim whitespace
   l <- stringr::str_trim(tolower(lines))
 
-  # Stronger heuristic: true PAQXOS header must contain BOTH xo and q3 on the same line,
-  # plus commas. This avoids false positives from metadata rows.
-  has_xo     <- stringr::str_detect(l, "\\bxo\\b")
-  has_q3 <- stringr::str_detect(l, "q\\s*[3₃³]")
-  has_comma <- stringr::str_detect(l, ",")
-
-  is_header <- stringr::str_detect(l, "^xo\\s*([,/]|\\s)") &
-               has_xo & has_q3 & has_comma
+  # Robust heuristic:
+  #  - header line starts with "xo"
+  #  - contains commas (CSV header)
+  #  - contains a q-column marker (q, q3, q₃, etc.)
+  is_header <- stringr::str_detect(l, "^\\s*xo\\s*[/,]") &
+    stringr::str_detect(l, ",") &
+    stringr::str_detect(l, "q")
 
   idx <- which(is_header)[1]
 
