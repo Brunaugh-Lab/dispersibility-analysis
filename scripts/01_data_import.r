@@ -314,6 +314,12 @@ read_ld_data_from_structure <- function(
     ) |>
     dplyr::filter(!is.na(particle_size_um))
 
+
+  # Ensure expected metadata columns exist (avoids hard-fail on missing columns)
+  if (!("pressure_drop" %in% names(combined_data))) combined_data$pressure_drop <- NA_character_
+  if (!("device"        %in% names(combined_data))) combined_data$device        <- NA_character_
+  if (!("formulation_id" %in% names(combined_data))) combined_data$formulation_id <- NA_character_
+
   # Extract metadata used downstream
   combined_data <- combined_data |>
     dplyr::mutate(
@@ -335,12 +341,9 @@ read_ld_data_from_structure <- function(
       ),
 
       pressure_drop_clean = dplyr::case_when(
-        is_inhaler ~ stringr::str_extract(
-          dplyr::coalesce(pressure_drop, `pressure_drop`, `pressure-drop`),
-          "\\d+"
-        ),
-        is_rodos ~ "reference",
-        TRUE     ~ "unknown"
+        is_inhaler ~ stringr::str_extract(pressure_drop, "\\d+"),
+        is_rodos   ~ "reference",
+        TRUE       ~ "unknown"
       ),
 
       measurement_time = dplyr::coalesce(
