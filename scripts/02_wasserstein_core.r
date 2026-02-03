@@ -24,7 +24,27 @@
 #            for Quantifying Dispersibility in Dry Powder Inhalers"
 # ==============================================================================
 
-library(tidyverse)
+# ==============================================================================
+# DEPENDENCY CHECK (public-facing friendly)
+#   - Avoids attaching packages to the search path
+#   - Fails early with a clear install message
+# ==============================================================================
+
+.require_pkgs <- function(pkgs) {
+  missing <- pkgs[!vapply(pkgs, requireNamespace, logical(1), quietly = TRUE)]
+  if (length(missing) > 0) {
+    stop(
+      "Missing required packages: ", paste(missing, collapse = ", "),
+      "\nInstall with:\n  install.packages(c(",
+      paste0('"', missing, '"', collapse = ", "),
+      "))",
+      call. = FALSE
+    )
+  }
+  invisible(TRUE)
+}
+
+.require_pkgs(c("dplyr", "readr", "tibble"))
 
 # ==============================================================================
 # HELPER FUNCTION: Pool replicate CDFs before W1 calculation
@@ -51,7 +71,7 @@ pool_replicate_cdfs <- function(data, formulation, module, device_resistance = N
 
   # Start with base filter
   pooled_cdf <- data %>%
-    filter(
+    dplyr::filter(
       formulation == !!formulation,
       module == !!module
     )
@@ -59,24 +79,24 @@ pool_replicate_cdfs <- function(data, formulation, module, device_resistance = N
   # Add device/pressure filters ONLY for INHALER data
   if (!is.null(device_resistance)) {
     pooled_cdf <- pooled_cdf %>%
-      filter(device_resistance == !!device_resistance)
+      dplyr::filter(device_resistance == !!device_resistance)
   }
 
   if (!is.null(pressure_drop)) {
     pooled_cdf <- pooled_cdf %>%
-      filter(pressure_drop_clean == !!pressure_drop)
+      dplyr::filter(pressure_drop_clean == !!pressure_drop)
   }
 
   # Pool replicates
   pooled_cdf <- pooled_cdf %>%
-    group_by(particle_size_um) %>%
-    summarise(
+    dplyr::group_by(particle_size_um) %>%
+    dplyr::summarise(
       q3_cdf_mean = mean(q3_cdf, na.rm = TRUE),
-      q3_cdf_sd = sd(q3_cdf, na.rm = TRUE),
-      n_replicates = n(),
-      .groups = 'drop'
+      q3_cdf_sd = stats::sd(q3_cdf, na.rm = TRUE),
+      n_replicates = dplyr::n(),
+      .groups = "drop"
     ) %>%
-    arrange(particle_size_um)
+    dplyr::arrange(particle_size_um)
 
   return(pooled_cdf)
 }
@@ -108,15 +128,6 @@ pool_replicate_cdfs <- function(data, formulation, module, device_resistance = N
 #' @param cdf_ref Numeric vector of reference CDF values (0-1) at each size
 #'
 #' @return Numeric scalar: W1 distance in micrometers
-#'
-#' @examples
-#' # Simple example with artificial CDFs
-#' sizes <- c(1, 2, 3, 4, 5)
-#' cdf_inhaler <- c(0.1, 0.3, 0.5, 0.8, 1.0)
-#' cdf_rodos <- c(0.2, 0.5, 0.7, 0.9, 1.0)
-#'
-#' w1 <- calculate_wasserstein_1d(sizes, cdf_inhaler, cdf_rodos)
-#' print(paste("W1 =", round(w1, 3), "µm"))
 #'
 calculate_wasserstein_1d <- function(size_grid, cdf_test, cdf_ref) {
 
@@ -189,11 +200,6 @@ calculate_wasserstein_1d <- function(size_grid, cdf_test, cdf_ref) {
 #'   - W1_normalized: W1 divided by reference d50 (dimensionless)
 #'   - d50_shift_um: Test d50 minus reference d50 (µm)
 #'
-#' @examples
-#' # After running 01_data_import.R
-#' source("scripts/02_wasserstein_core.R")
-#' w1_results <- calculate_pairwise_wasserstein(data)
-#'
 calculate_pairwise_wasserstein <- function(
     data,
     reference_module = "RODOS",
@@ -257,8 +263,8 @@ calculate_pairwise_wasserstein <- function(
 
     # Get all device-pressure combinations for this formulation
     device_pressure_combos <- data %>%
-      filter(formulation == !!form, module == !!test_module) %>%
-      distinct(device_resistance, pressure_drop_clean)
+      dplyr::filter(formulation == !!form, module == !!test_module) %>%
+      dplyr::distinct(device_resistance, pressure_drop_clean)
 
     if (nrow(device_pressure_combos) == 0) {
       if (verbose) {
@@ -278,9 +284,11 @@ calculate_pairwise_wasserstein <- function(
       }
 
       # Pool replicates for THIS specific test condition
-      test_pooled <- pool_replicate_cdfs(data, form, test_module,
-                                         device_resistance = dev,
-                                         pressure_drop = press)
+      test_pooled <- pool_replicate_cdfs(
+        data, form, test_module,
+        device_resistance = dev,
+        pressure_drop = press
+      )
 
       # Check that we have test data
       if (nrow(test_pooled) == 0) {
@@ -302,7 +310,7 @@ calculate_pairwise_wasserstein <- function(
       d50_test <- calculate_d50(test_pooled$particle_size_um, test_pooled$q3_cdf_mean)
 
       # Store results with device/pressure info
-      results_list[[length(results_list) + 1]] <- tibble(
+      results_list[[length(results_list) + 1]] <- tibble::tibble(
         formulation = form,
         device_resistance = dev,
         pressure_drop = press,
@@ -324,8 +332,8 @@ calculate_pairwise_wasserstein <- function(
     stop("No successful W1 calculations. Check your data.")
   }
 
-  results <- bind_rows(results_list) %>%
-    arrange(formulation)
+  results <- dplyr::bind_rows(results_list) %>%
+    dplyr::arrange(formulation)
 
   if (verbose) {
     cat("\n========================================================================\n")
@@ -348,7 +356,7 @@ calculate_pairwise_wasserstein <- function(
   # Save output if requested
   if (save_output) {
     output_path <- file.path(output_dir, output_filename)
-    write_csv(results, output_path)
+    readr::write_csv(results, output_path)
 
     if (verbose) {
       cat("✓ Results saved to:", output_path, "\n")
@@ -431,11 +439,11 @@ validate_wasserstein_results <- function(w1_results, max_w1_normalized = 2.0) {
 
   # Check for NA values
   na_counts <- w1_results %>%
-    summarise(across(everything(), ~sum(is.na(.))))
+    dplyr::summarise(dplyr::across(dplyr::everything(), ~sum(is.na(.))))
 
   if (any(na_counts > 0)) {
     cat("\nWARNING: NA values detected:\n")
-    print(na_counts %>% select(where(~. > 0)))
+    print(na_counts %>% dplyr::select(dplyr::where(~. > 0)))
     all_valid <- FALSE
   } else {
     cat("✓ No NA values in results\n")
@@ -451,11 +459,11 @@ validate_wasserstein_results <- function(w1_results, max_w1_normalized = 2.0) {
 
   # Check for unreasonably large W1/d50
   large_w1 <- w1_results %>%
-    filter(W1_normalized > max_w1_normalized)
+    dplyr::filter(W1_normalized > max_w1_normalized)
 
   if (nrow(large_w1) > 0) {
     cat(sprintf("\nWARNING: Some W1/d50 values exceed %.2f:\n", max_w1_normalized))
-    print(large_w1 %>% select(formulation, W1_normalized, d50_reference_um))
+    print(large_w1 %>% dplyr::select(formulation, W1_normalized, d50_reference_um))
     cat("  → This suggests very poor dispersibility or data quality issues\n")
     all_valid <- FALSE
   } else {
@@ -464,11 +472,11 @@ validate_wasserstein_results <- function(w1_results, max_w1_normalized = 2.0) {
 
   # Check for negative d50 shifts (test finer than reference - unusual)
   negative_shifts <- w1_results %>%
-    filter(d50_shift_um < 0)
+    dplyr::filter(d50_shift_um < 0)
 
   if (nrow(negative_shifts) > 0) {
     cat("\nNOTE: Some formulations show negative d50 shifts (test finer than reference):\n")
-    print(negative_shifts %>% select(formulation, d50_shift_um))
+    print(negative_shifts %>% dplyr::select(formulation, d50_shift_um))
     cat("  → This is unusual but possible if test dispersion is more efficient\n")
   }
 
@@ -477,13 +485,13 @@ validate_wasserstein_results <- function(w1_results, max_w1_normalized = 2.0) {
   cat("DISTRIBUTION SUMMARY:\n")
   cat(sprintf("  W1: %.4f ± %.4f µm (range: %.4f - %.4f)\n",
               mean(w1_results$W1_micrometers, na.rm = TRUE),
-              sd(w1_results$W1_micrometers, na.rm = TRUE),
+              stats::sd(w1_results$W1_micrometers, na.rm = TRUE),
               min(w1_results$W1_micrometers, na.rm = TRUE),
               max(w1_results$W1_micrometers, na.rm = TRUE)))
 
   cat(sprintf("  W1/d50: %.4f ± %.4f (range: %.4f - %.4f)\n",
               mean(w1_results$W1_normalized, na.rm = TRUE),
-              sd(w1_results$W1_normalized, na.rm = TRUE),
+              stats::sd(w1_results$W1_normalized, na.rm = TRUE),
               min(w1_results$W1_normalized, na.rm = TRUE),
               max(w1_results$W1_normalized, na.rm = TRUE)))
 
@@ -513,10 +521,6 @@ validate_wasserstein_results <- function(w1_results, max_w1_normalized = 2.0) {
 #'
 #' @return Tibble with W1 results
 #'
-#' @examples
-#' # Load previously calculated W1 distances
-#' w1_results <- load_wasserstein_results()
-#'
 load_wasserstein_results <- function(
     results_dir = "results",
     filename = "wasserstein_results.csv",
@@ -534,7 +538,7 @@ load_wasserstein_results <- function(
     cat("Loading W1 results from:", file_path, "\n")
   }
 
-  results <- read_csv(file_path, show_col_types = FALSE)
+  results <- readr::read_csv(file_path, show_col_types = FALSE)
 
   if (verbose) {
     cat("✓ Loaded results for", nrow(results), "formulations\n")
@@ -563,11 +567,6 @@ load_wasserstein_results <- function(
 #'
 #' @return Tibble with W1 results
 #'
-#' @examples
-#' # Simple one-liner after running 01_data_import.R
-#' source("scripts/02_wasserstein_core.R")
-#' w1_results <- run_wasserstein_analysis()
-#'
 run_wasserstein_analysis <- function(
     processed_dir = "data_v2/tidy",
     results_dir = "results_v2",
@@ -580,19 +579,22 @@ run_wasserstein_analysis <- function(
   data_file <- file.path(processed_dir, "standardized_data_with_conditions.csv")
 
   if (!file.exists(data_file)) {
-    stop("Processed data not found: ", data_file,
-         "\nRun 01_data_import.R first to create this file.")
+    stop(
+      "Processed data not found: ", data_file,
+      "\nRun 01_data_import.R first to create this file.",
+      call. = FALSE
+    )
   }
 
   if (verbose) {
     cat("Loading processed data from:", data_file, "\n")
   }
 
-  data <- read_csv(data_file, show_col_types = FALSE)
+  data <- readr::read_csv(data_file, show_col_types = FALSE)
 
   if (verbose) {
     cat("✓ Loaded", nrow(data), "rows\n")
-    cat("  Formulations:", n_distinct(data$formulation), "\n")
+    cat("  Formulations:", dplyr::n_distinct(data$formulation), "\n")
     cat("  Modules:", paste(unique(data$module), collapse = ", "), "\n")
   }
 
