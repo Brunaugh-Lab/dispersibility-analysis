@@ -306,7 +306,6 @@ calculate_pairwise_wasserstein <- function(
         W1_micrometers = w1,
         d50_reference_um = d50_ref,
         d50_test_um = d50_test,
-        W1_normalized = w1 / d50_ref,
         d50_shift_um = d50_test - d50_ref
       )
 
@@ -333,12 +332,8 @@ calculate_pairwise_wasserstein <- function(
     cat("Summary statistics:\n")
     cat(sprintf("  W1 range: %.4f - %.4f µm\n",
                 min(results$W1_micrometers), max(results$W1_micrometers)))
-    cat(sprintf("  W1/d50 range: %.4f - %.4f\n",
-                min(results$W1_normalized), max(results$W1_normalized)))
     cat(sprintf("  Mean W1: %.4f µm (SD = %.4f)\n",
                 mean(results$W1_micrometers), sd(results$W1_micrometers)))
-    cat(sprintf("  Mean W1/d50: %.4f (SD = %.4f)\n",
-                mean(results$W1_normalized), sd(results$W1_normalized)))
     cat("========================================================================\n\n")
   }
 
@@ -403,22 +398,21 @@ calculate_d50 <- function(size_grid, cdf) {
   return(d50)
 }
 
-
 # ==============================================================================
 # VALIDATION FUNCTION: Check W1 results quality
 # ==============================================================================
 
 #' Validate Wasserstein Distance Results
 #'
-#' Checks W1 results for common issues and provides diagnostic information
+#' Checks W1 results for common issues and prints diagnostic information.
 #'
 #' @param w1_results Tibble from calculate_pairwise_wasserstein()
-#' @param max_w1_normalized Maximum reasonable W1/d50 value (default: 2.0)
-#'   Values above this threshold are flagged as potentially problematic
+#' @param max_w1_um Optional upper bound for flagging unusually large W1 values (µm).
+#'   Default: Inf (no flagging). Use this only if you have a justified threshold.
 #'
-#' @return Invisibly returns TRUE if validation passes
+#' @return Invisibly returns TRUE if validation passes (no warnings/errors flagged)
 #'
-validate_wasserstein_results <- function(w1_results, max_w1_normalized = 2.0) {
+validate_wasserstein_results <- function(w1_results, max_w1_um = Inf) {
 
   cat("\n========================================================================\n")
   cat("VALIDATING WASSERSTEIN RESULTS\n")
@@ -426,7 +420,18 @@ validate_wasserstein_results <- function(w1_results, max_w1_normalized = 2.0) {
 
   all_valid <- TRUE
 
-  # Check for NA values
+  # ---- minimal schema check ----
+  required_cols <- c("W1_micrometers", "d50_shift_um", "formulation")
+  missing_cols <- setdiff(required_cols, names(w1_results))
+  if (length(missing_cols) > 0) {
+    stop(
+      "w1_results is missing required columns: ",
+      paste(missing_cols, collapse = ", "),
+      call. = FALSE
+    )
+  }
+
+  # ---- NA checks ----
   na_counts <- w1_results |>
     dplyr::summarise(dplyr::across(dplyr::everything(), ~sum(is.na(.))))
 
@@ -438,53 +443,51 @@ validate_wasserstein_results <- function(w1_results, max_w1_normalized = 2.0) {
     cat("✓ No NA values in results\n")
   }
 
-  # Check for negative W1 (impossible)
+  # ---- check for negative W1 (impossible) ----
   if (any(w1_results$W1_micrometers < 0, na.rm = TRUE)) {
     cat("\nERROR: Negative W1 values detected (this is impossible!)\n")
     all_valid <- FALSE
   } else {
-    cat("✓ All W1 values are positive\n")
+    cat("✓ All W1 values are non-negative\n")
   }
 
-  # Check for unreasonably large W1/d50
-  large_w1 <- w1_results |>
-    dplyr::filter(W1_normalized > max_w1_normalized)
+  # ---- optional absolute magnitude flag ----
+  if (is.finite(max_w1_um)) {
+    large_w1 <- w1_results |>
+      dplyr::filter(W1_micrometers > max_w1_um)
 
-  if (nrow(large_w1) > 0) {
-    cat(sprintf("\nWARNING: Some W1/d50 values exceed %.2f:\n", max_w1_normalized))
-    print(large_w1 |> dplyr::select(formulation, W1_normalized, d50_reference_um))
-    cat("  → This suggests very poor dispersibility or data quality issues\n")
-    all_valid <- FALSE
-  } else {
-    cat(sprintf("✓ All W1/d50 values are reasonable (< %.2f)\n", max_w1_normalized))
+    if (nrow(large_w1) > 0) {
+      cat(sprintf("\nWARNING: Some W1 values exceed %.3f µm:\n", max_w1_um))
+      print(large_w1 |> dplyr::select(formulation, dplyr::everything()))
+      cat("  → Consider checking dispersion quality or data integrity for these cases\n")
+      all_valid <- FALSE
+    } else {
+      cat(sprintf("✓ All W1 values are below %.3f µm\n", max_w1_um))
+    }
   }
 
-  # Check for negative d50 shifts (test finer than reference - unusual)
+  # ---- negative d50 shifts (test finer than reference) ----
   negative_shifts <- w1_results |>
     dplyr::filter(d50_shift_um < 0)
 
   if (nrow(negative_shifts) > 0) {
-    cat("\nNOTE: Some formulations show negative d50 shifts (test finer than reference):\n")
+    cat("\nNOTE: Some cases show negative d50 shifts (test finer than reference):\n")
     print(negative_shifts |> dplyr::select(formulation, d50_shift_um))
-    cat("  → This is unusual but possible if test dispersion is more efficient\n")
+    cat("  → This is unusual but can occur if the test condition disperses more efficiently\n")
   }
 
-  # Summary statistics
+  # ---- summary ----
   cat("\n------------------------------------------------------------------------\n")
   cat("DISTRIBUTION SUMMARY:\n")
-  cat(sprintf("  W1: %.4f ± %.4f µm (range: %.4f - %.4f)\n",
-              mean(w1_results$W1_micrometers, na.rm = TRUE),
-              stats::sd(w1_results$W1_micrometers, na.rm = TRUE),
-              min(w1_results$W1_micrometers, na.rm = TRUE),
-              max(w1_results$W1_micrometers, na.rm = TRUE)))
-
-  cat(sprintf("  W1/d50: %.4f ± %.4f (range: %.4f - %.4f)\n",
-              mean(w1_results$W1_normalized, na.rm = TRUE),
-              stats::sd(w1_results$W1_normalized, na.rm = TRUE),
-              min(w1_results$W1_normalized, na.rm = TRUE),
-              max(w1_results$W1_normalized, na.rm = TRUE)))
-
+  cat(sprintf(
+    "  W1: %.4f ± %.4f µm (range: %.4f - %.4f)\n",
+    mean(w1_results$W1_micrometers, na.rm = TRUE),
+    stats::sd(w1_results$W1_micrometers, na.rm = TRUE),
+    min(w1_results$W1_micrometers, na.rm = TRUE),
+    max(w1_results$W1_micrometers, na.rm = TRUE)
+  ))
   cat("------------------------------------------------------------------------\n")
+
   if (all_valid) {
     cat("VALIDATION PASSED: Results look reasonable\n")
   } else {
@@ -492,8 +495,9 @@ validate_wasserstein_results <- function(w1_results, max_w1_normalized = 2.0) {
   }
   cat("========================================================================\n\n")
 
-  return(invisible(all_valid))
+  invisible(all_valid)
 }
+
 
 
 # ==============================================================================
