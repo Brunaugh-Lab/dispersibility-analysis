@@ -568,15 +568,23 @@ This repository provides transparent, reusable implementations of the dispersibi
 
 ## Citation
 
-If you use this toolkit in your research, please cite:
+If you use this toolkit in your research, please cite the relevant publications and the software archive as appropriate.
 
-**Dispersibility methodology:**
-Xia G, Dechayont B, Che L, Comfort I, Brunaugh AD. "A Distribution-Based Metric for Quantifying Dispersibility in Dry Powder Inhalers." *Pharmaceutics* (submitted 2025).
+**Software (this toolkit):**  
+Brunaugh AD, Xia G. *Dispersibility Analysis Toolkit*. Zenodo.  
+DOI: https://doi.org/10.5281/zenodo.18475101
 
-**Application example:**
-Xia G, Bennett N, Watts A, Brunaugh AD. "Mapping a Ternary Carbohydrate Design Space for Stable and Dispersible Protein Dry Powders." *Molecular Pharmaceutics* (submitted 2025).
+![DOI](https://zenodo.org/badge/1096698618.svg)
 
-A DOI-linked software archive will be available via Zenodo upon publication.
+**Dispersibility methodology:**  
+Xia G, Dechayont B, Che L, Comfort I, Brunaugh AD.  
+“A Distribution-Based Metric for Quantifying Dispersibility in Dry Powder Inhalers.”  
+*Pharmaceutics* (submitted 2025).
+
+**Application example:**  
+Xia G, Bennett N, Watts A, Brunaugh AD.  
+“Mapping a Ternary Carbohydrate Design Space for Stable and Dispersible Protein Dry Powders.”  
+*Molecular Pharmaceutics* (submitted 2025).
 
 ---
 
