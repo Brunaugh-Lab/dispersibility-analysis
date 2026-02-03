@@ -43,7 +43,6 @@
 #
 #   - plot_individual_formulation_pdfs()
 #   - plot_all_inhaler_overlay()
-#   - plot_psd_density()
 #   - plot_w1_bars()
 #   - plot_d50_comparison()
 #   - create_publication_panel()
@@ -419,90 +418,6 @@ plot_all_inhaler_overlay <- function(
 
   if (isTRUE(verbose)) {
     cat(sprintf("✓ Saved: %s (%d×%d grid)\n", output_path, n_devices, n_pressures))
-  }
-
-  return(p)
-}
-
-# ==============================================================================
-# FUNCTION 2: Plot Particle Size Density (PSD)
-# ==============================================================================
-
-plot_psd_density <- function(
-    data,
-    reference_module = "RODOS",
-    test_module = "INHALER",
-    formulations = NULL,
-    color_palette = c("RODOS" = "#E31A1C", "INHALER" = "#1F78B4"),
-    facet_by = TRUE,
-    ncol = 3
-) {
-
-  if (!is.null(formulations)) {
-    data <- data %>% filter(formulation %in% formulations)
-  }
-
-  plot_data <- data %>%
-    filter(module %in% c(reference_module, test_module))
-
-  psd_data <- plot_data %>%
-    arrange(formulation, module, replicate, particle_size_um) %>%
-    group_by(formulation, module, replicate) %>%
-    mutate(
-      log_size = log10(particle_size_um),
-      dQ3_dlogx = c(0, diff(q3_percent) / diff(log_size))
-    ) %>%
-    ungroup()
-
-  psd_summary <- psd_data %>%
-    group_by(formulation, module, particle_size_um) %>%
-    summarise(
-      dQ3_dlogx_mean = mean(dQ3_dlogx, na.rm = TRUE),
-      dQ3_dlogx_sd = sd(dQ3_dlogx, na.rm = TRUE),
-      .groups = 'drop'
-    ) %>%
-    mutate(dQ3_dlogx_sd = ifelse(is.na(dQ3_dlogx_sd), 0, dQ3_dlogx_sd))
-
-  psd_summary$module <- factor(
-    psd_summary$module,
-    levels = c(reference_module, test_module)
-  )
-
-  p <- ggplot(psd_summary, aes(x = particle_size_um, y = dQ3_dlogx_mean,
-                                color = module, fill = module)) +
-    geom_ribbon(
-      aes(ymin = dQ3_dlogx_mean - dQ3_dlogx_sd,
-          ymax = dQ3_dlogx_mean + dQ3_dlogx_sd),
-      alpha = 0.15, color = NA
-    ) +
-    geom_line(linewidth = 0.8) +
-    scale_x_log10(
-      limits = c(0.5, 100),
-      breaks = c(1, 10, 100),
-      minor_breaks = c(0.5, 2, 3, 4, 5, 6, 7, 8, 9, 20, 30, 40, 50, 60, 70, 80, 90),
-      labels = c("1", "10", "100")
-    ) +
-    scale_y_continuous(expand = expansion(mult = c(0, 0.05))) +
-    scale_color_manual(values = color_palette, name = "Module") +
-    scale_fill_manual(values = color_palette, guide = "none") +
-    labs(
-      x = "Particle Size (µm)",
-      y = "Particle Size Density (dQ₃/d log x)",
-      title = "Particle Size Density Distributions"
-    ) +
-    theme_classic(base_size = 14) +
-    theme(
-      panel.grid.major = element_line(color = "grey90", linewidth = 0.3),
-      panel.grid.minor.x = element_line(color = "grey95", linewidth = 0.2),
-      strip.background = element_blank(),
-      strip.text = element_text(face = "bold", size = 12),
-      axis.title = element_text(face = "bold"),
-      legend.title = element_text(face = "bold"),
-      legend.position = "bottom"
-    )
-
-  if (facet_by) {
-    p <- p + facet_wrap(~ formulation, ncol = ncol, scales = "free_y")
   }
 
   return(p)
