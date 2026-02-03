@@ -21,12 +21,6 @@
 #            for Quantifying Dispersibility in Dry Powder Inhalers"
 # ==============================================================================
 
-# ==============================================================================
-# DEPENDENCY CHECK (public-facing friendly)
-#   - Avoids attaching packages to the search path
-#   - Fails early with a clear install message
-# ==============================================================================
-
 .require_pkgs <- function(pkgs) {
   missing <- pkgs[!vapply(pkgs, requireNamespace, logical(1), quietly = TRUE)]
   if (length(missing) > 0) {
@@ -440,7 +434,7 @@ validate_wasserstein_results <- function(w1_results, max_w1_normalized = 2.0) {
 
   if (any(na_counts > 0)) {
     cat("\nWARNING: NA values detected:\n")
-    print(na_counts %>% dplyr::select(dplyr::where(~. > 0)))
+    print(na_counts |> dplyr::select(dplyr::where(~. > 0)))
     all_valid <- FALSE
   } else {
     cat("✓ No NA values in results\n")
@@ -460,7 +454,7 @@ validate_wasserstein_results <- function(w1_results, max_w1_normalized = 2.0) {
 
   if (nrow(large_w1) > 0) {
     cat(sprintf("\nWARNING: Some W1/d50 values exceed %.2f:\n", max_w1_normalized))
-    print(large_w1 %>% dplyr::select(formulation, W1_normalized, d50_reference_um))
+    print(large_w1 |> dplyr::select(formulation, W1_normalized, d50_reference_um))
     cat("  → This suggests very poor dispersibility or data quality issues\n")
     all_valid <- FALSE
   } else {
@@ -473,7 +467,7 @@ validate_wasserstein_results <- function(w1_results, max_w1_normalized = 2.0) {
 
   if (nrow(negative_shifts) > 0) {
     cat("\nNOTE: Some formulations show negative d50 shifts (test finer than reference):\n")
-    print(negative_shifts %>% dplyr::select(formulation, d50_shift_um))
+    print(negative_shifts |> dplyr::select(formulation, d50_shift_um))
     cat("  → This is unusual but possible if test dispersion is more efficient\n")
   }
 
