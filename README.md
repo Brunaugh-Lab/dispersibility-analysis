@@ -5,82 +5,114 @@ A reproducible R-based toolkit for quantifying dry powder inhaler dispersibility
 ## 📋 What This Does
 
 This toolkit calculates **dispersibility metrics** for dry powder inhalers by:
-1. Comparing particle size distributions from inhaler-based dispersion to maximally dispersed reference conditions (RODOS)
-2. Computing the Wasserstein-1 (W₁) distance - a measure of how much particle redistribution is needed to achieve full dispersion
-3. Normalizing W₁ by reference particle size (d₅₀) to enable fair cross-formulation comparisons
+1. Importing Sympatec PAQXOS laser diffraction exports with automatic header detection
+2. Comparing particle size distributions from inhaler-based dispersion (INHALER) to maximally dispersed reference conditions (RODOS)
+3. Computing the Wasserstein-1 (W₁) distance - a measure of how much particle redistribution is needed to achieve full dispersion
+4. Generating publication-ready visualizations of cumulative distribution functions and dispersibility rankings
 
 **Physical interpretation:** Lower W₁ = better dispersibility (closer to fully dispersed state)
 
 **Pipeline workflow:**
-- Script 01: Reads raw data → Saves `data/tidy/standardized_data.csv`
-- Script 02: Reads tidy data → Saves `results/wasserstein_results.csv`
-- Script 03: Reads both → Generates PDFs + PNG in `figures/`
-  * One PDF per formulation (RODOS vs INHALER)
-  * One overlay PDF (all INHALER distributions)
-  * One PNG (W1 ranking bars)
+- **Script 01** (`01_data_import.R`): Reads raw PAQXOS CSVs → Saves `data/tidy/standardized_data_with_conditions.csv`
+  - Auto-detects data header row per file (handles variations in PAQXOS export format)
+  - Assigns replicate numbers deterministically based on measurement timestamps
+  - Works with any folder structure - no rigid naming requirements
+  - Validates data quality and flags unexpected issues
+
+- **Script 02** (`02_wasserstein_core.R`): Reads tidy data → Saves `results/wasserstein_results.csv`
+  - Pools technical replicates before W1 calculation (proper methodology)
+  - Handles multiple test conditions (device resistance × pressure drop combinations)
+  - Calculates both absolute W₁ (µm) and normalized W₁/d₅₀ metrics
+
+- **Script 03** (`03_visualization.R`): Reads both files → Generates PDFs in `figures/`
+  - One PDF per formulation showing reference vs all test conditions
+  - Pairwise comparison PDFs for each formulation-condition combination
+  - W₁ dispersibility ranking plots
+  - Uses same replicate pooling as W₁ calculations for methodological consistency
 
 Each script is **standalone** and auto-creates needed folders/files.
 
-**Complete pipeline (3 lines):**
+**Complete pipeline (3 commands):**
 ```r
-source("scripts/01_data_import.R")       # Auto-imports → data/tidy/
-source("scripts/02_wasserstein_core.R")  # Auto-calculates → results/
-source("scripts/03_visualization.R")     # Auto-plots → figures/
+source("scripts/01_data_import.R")
+data <- run_data_import("data")                      # Auto-imports → data/tidy/
+
+source("scripts/02_wasserstein_core.R")
+w1_results <- run_wasserstein_analysis()             # Auto-calculates → results/
+
+source("scripts/03_visualization.R")
+generate_all_plots(data, w1_results)                 # Auto-plots → figures/
 ```
 
 ---
 
 ## 🗂️ Required Folder Structure
 
-Organize your laser diffraction data like this:
+**Flexible structure** - The pipeline works with any organization as long as:
+1. CSV files are somewhere under `data/`
+2. Filenames or folder paths contain "RODOS" or "INHALER" (case-insensitive)
+3. Files have `formulation_id` in their PAQXOS metadata (preferred) OR use folder name as fallback
 
+**Recommended structure:**
 ```
 Wasserstein_DPI/
-├── data/                      # Raw CSV files and tidy data
-│   ├── FormulationA/          # Any formulation naming scheme works!
-│   │   ├── inhaler/            # Inhaler dispersion data (lowercase or UPPERCASE)
-│   │   │   ├── rep1.csv
-│   │   │   ├── rep2.csv
-│   │   │   └── rep3.csv
-│   │   └── rodos/              # RODOS reference data (lowercase or UPPERCASE)
-│   │       ├── rep1.csv
-│   │       ├── rep2.csv
-│   │       └── rep3.csv
-│   ├── FormulationB/
-│   │   ├── inhaler/
-│   │   └── rodos/
-│   ├── ...
-│   └── tidy/                   # Auto-created by 01_data_import.R
-│       └── standardized_data.csv  # Cleaned data for analysis
+├── data/
+│   ├── RODOS/                 # Reference disperser data
+│   │   ├── file1.csv          # Timestamp determines replicate order
+│   │   ├── file2.csv          # (earliest = rep1, next = rep2, etc.)
+│   │   └── file3.csv
+│   ├── INHALER/               # Test disperser data
+│   │   ├── high_1kPa_file1.csv
+│   │   ├── high_1kPa_file2.csv
+│   │   ├── high_1kPa_file3.csv
+│   │   ├── high_2kPa_file1.csv
+│   │   └── ...                # Multiple conditions supported
+│   └── tidy/                  # Auto-created by 01_data_import.R
+│       └── standardized_data_with_conditions.csv
 ├── results/                   # Auto-created by 02_wasserstein_core.R
 │   └── wasserstein_results.csv
 ├── figures/                   # Auto-created by 03_visualization.R
-│   ├── FormA_comparison.pdf   # Individual formulation PDFs (one per formulation)
-│   ├── FormB_comparison.pdf
-│   ├── ...
-│   ├── all_inhaler_overlay.pdf  # All INHALER distributions overlayed
-│   └── w1_ranking.png         # Dispersibility ranking bars
+│   ├── FormA_reference_vs_high_1kPa.pdf
+│   ├── FormA_reference_vs_high_2kPa.pdf
+│   └── ...
 └── scripts/
     ├── 01_data_import.R
     ├── 02_wasserstein_core.R
     └── 03_visualization.R
 ```
 
-**Formulation naming is flexible!** Examples of valid folder names:
-- Simple: `FormA`, `FormB`, `FormC`
-- Numbered: `Run2`, `Run3`, `Run4`
-- Descriptive: `Trehalose_High`, `Mannitol_Low`
-- Coded: `132067_IMT`, `231067_IMT` (current project example)
-- Complex: `F2_40-20-40_IMT`, `F3_33-00-67_IMT`
+**Alternative valid structures:**
+```
+data/
+├── Formulation_A/
+│   ├── RODOS/
+│   │   └── *.csv
+│   └── INHALER/
+│       └── *.csv
+├── Formulation_B/
+│   ├── rodos/              # Lowercase works too
+│   │   └── *.csv
+│   └── inhaler/
+│       └── *.csv
+```
 
-By default, the entire folder name becomes the formulation ID.
+**Key flexibility features:**
+- ✅ **No rigid naming requirements** - any folder/file names work
+- ✅ **Replicate assignment is automatic** - based on measurement timestamps in PAQXOS metadata
+- ✅ **Case-insensitive** - "RODOS", "rodos", "Rodos" all work
+- ✅ **Multiple test conditions** - handles device resistance and pressure drop variations
+- ✅ **Formulation ID detection** - uses PAQXOS metadata field or folder name as fallback
 
 **Important notes:**
-- **Formulation folder names** = your formulation IDs (by default, entire name is used)
-- **Subfolder names** must contain "inhaler" or "rodos" (case-insensitive)
-- **Replicate filenames** must contain "rep1", "rep2", "rep3" (or "Rep1", "Rep_1", etc.)
-- **CSV files** must be Sympatec PAQXOS exports (standard format with 2 header rows)
-- **Flexibility:** You can extract only part of folder names using custom patterns (see Step 4)
+- **CSV files** must be Sympatec PAQXOS exports (standard format: 2 metadata rows + distribution data)
+- **Module detection** happens via:
+  1. PAQXOS metadata field "Dispersing system" (primary)
+  2. Folder path containing "rodos" or "inhaler" (fallback)
+- **Replicate assignment** is deterministic:
+  - Files grouped by (formulation, module, device, pressure_drop)
+  - Sorted by measurement timestamp
+  - Assigned rep1, rep2, rep3... sequentially
+  - NO manual replicate labeling in filenames required!
 
 ---
 
@@ -91,9 +123,11 @@ By default, the entire folder name becomes the formulation ID.
 Open R or RStudio and run:
 
 ```r
-# Install packages if you don't have them
-install.packages("tidyverse")
-install.packages("janitor")
+# Core packages for data import and Wasserstein calculation
+install.packages(c("tidyverse", "janitor"))
+
+# Additional packages for visualization
+install.packages(c("viridis", "patchwork"))
 ```
 
 ### Step 2: Set Your Working Directory
@@ -104,298 +138,342 @@ setwd("~/Documents/GitHub/Wasserstein_DPI")
 # Or on Windows: setwd("C:/Users/YourName/Documents/GitHub/Wasserstein_DPI")
 ```
 
-### Step 3: Load the Data Import Script
+### Step 3: Import Your Data
 
 ```r
-# Load the data import functions
+# Load the data import script
 source("scripts/01_data_import.R")
-```
 
-### Step 4: Import Your Data
-
-**RECOMMENDED - Basic usage (auto-saves to data/tidy/standardized_data.csv):**
-
-```r
-data <- read_ld_data_from_structure(
-  data_directory = "data/",
-  formulation_pattern = ".*",            # Uses entire folder name (default)
-  replicate_pattern = "[Rr]ep_?\\d+",    # Matches rep1, Rep1, rep_1, Rep_1
-  save_output = TRUE,                    # Default: saves cleaned data
+# Run the complete import + validation pipeline
+data <- run_data_import(
+  data_directory = "data",
   verbose = TRUE
 )
 ```
 
-**What this does automatically:**
-- ✓ Creates `data/tidy/` folder if it doesn't exist
-- ✓ Saves cleaned data to `data/tidy/standardized_data.csv`
-- ✓ Standardizes replicate names to lowercase (rep1, rep2, rep3)
-- ✓ Validates data structure
+**What happens automatically:**
+- ✓ Recursively finds all CSV files under `data/`
+- ✓ Auto-detects the distribution data header row for each file
+- ✓ Extracts formulation ID from PAQXOS metadata (or uses folder name)
+- ✓ Determines module type (RODOS vs INHALER) from metadata/path
+- ✓ Assigns replicates deterministically based on timestamps
+- ✓ Creates `data/tidy/` folder
+- ✓ Saves standardized data to `data/tidy/standardized_data_with_conditions.csv`
+- ✓ Validates data structure (checks for NAs, CDF ranges, replicate counts)
 
-This works for ANY folder naming scheme - the folder names become your formulation IDs.
+**Expected console output:**
+```
+========================================================================
+READING LASER DIFFRACTION DATA
+========================================================================
+Data directory: data
+Total CSV files found: 90
+Excluded outputs in /tidy/: 0
+
+Reading PAQXOS metadata (rows 1-2)...
+Files with metadata: 90
+
+Reading distribution data blocks (auto-detecting skip rows)...
+Files with valid data blocks: 90
+Rows after joining metadata + data: 2880
+Files classified as RODOS or INHALER: 90
+
+Data extraction summary:
+Formulations found: 3
+[1] "INU_SULFB_20-1" "MAN_SULFB_20-1" "TRE_SULFB_20-1"
+
+Modules found: 2
+[1] "INHALER" "RODOS"
+
+Files per formulation-module combination:
+# A tibble: 3 × 3
+  formulation    INHALER RODOS
+1 INU_SULFB_20-1      27     3
+2 MAN_SULFB_20-1      27     3
+3 TRE_SULFB_20-1      27     3
+
+========================================================================
+VALIDATING DATA STRUCTURE
+========================================================================
+✓ All required columns present
+✓ No unexpected NA values in key columns
+✓ CDF values within [0,1] range
+✓ All conditions have ≥ 3 replicates
+✓ No duplicate file entries
+------------------------------------------------------------------------
+VALIDATION PASSED: Data structure is ready for analysis
+========================================================================
+```
 
 **Loading previously processed data (much faster!):**
 
 If you've already run the import once, you can quickly reload:
 
 ```r
-# Fast reload without re-reading 40+ raw CSV files
-data <- load_standardized_data()
-```
-
-**Example project-specific patterns:**
-
-If you need to extract only PART of the folder name, customize `formulation_pattern`:
-
-```r
-# Example 1: Folders named "132067_IMT", "231067_IMT" → Extract "132067_IMT"
-formulation_pattern = "\\d+_IMT"
-
-# Example 2: Folders named "FormA_batch1_data" → Extract "FormA"
-formulation_pattern = "Form[A-Z]"
-
-# Example 3: Folders named "Run2", "Run3", "Run4" → Extract "Run2", "Run3", "Run4"
-formulation_pattern = "Run\\d+"
-
-# Example 4: Folders named "F2_40-20-40_IMT" → Extract entire name
-formulation_pattern = ".*"  # (default - use this!)
-```
-
-**When to customize patterns:**
-- Your folder names have extra text you don't want in formulation IDs
-- You want to extract specific portions (like numeric codes)
-- You need to match a specific naming convention from another lab
-
-**When to use default (`".*"`):**
-- Your folder names ARE your formulation IDs (most common!)
-- You want to keep the entire folder name
-- You're not sure - start with this!
-
-### Step 5: Validate Your Data
-
-```r
-# Check that everything imported correctly
-validate_ld_data(data, check_replicates = TRUE, min_replicates = 3)
-
-# Quick summary: Should show 3 replicates per formulation-module combination
-data %>%
-  distinct(formulation, module, replicate) %>%
-  count(formulation, module) %>%
-  pivot_wider(names_from = module, values_from = n, values_fill = 0)
-```
-
-**Expected output:**
-```
-  formulation  INHALER RODOS
-1 FormA              3     3
-2 FormB              3     3
-3 FormC              3     3
-...
-```
-
-(Formulation names will match your folder names)
-
-### Step 6: Inspect Your Data
-
-```r
-# View first few rows
-head(data)
-
-# Open in RStudio viewer
-View(data)
-
-# Check how many data points per file
-data %>%
-  count(formulation, module, replicate) %>%
-  print(n = Inf)
-```
-
-### Step 7: Calculate Wasserstein Distances
-
-```r
-# Load the Wasserstein calculation functions
-source("scripts/02_wasserstein_core.R")
-
-# Calculate W1 distances (compares INHALER to RODOS for each formulation)
-w1_results <- calculate_pairwise_wasserstein(
-  data,
-  reference_module = "RODOS",
-  test_module = "INHALER",
+# Fast reload without re-reading raw CSV files
+data <- load_standardized_data(
+  processed_dir = "data/tidy",
   verbose = TRUE
 )
-
-# Validate results (checks for errors and unreasonable values)
-validate_wasserstein_results(w1_results)
-
-# View results
-print(w1_results, n = Inf)
-
-# Save results to CSV
-write_csv(w1_results, "wasserstein_results.csv")
 ```
 
-**Expected output:**
+### Step 4: Calculate Wasserstein Distances
+
+```r
+# Load the Wasserstein calculation script
+source("scripts/02_wasserstein_core.R")
+
+# Run the complete W1 analysis pipeline
+w1_results <- run_wasserstein_analysis(
+  tidy_data_path = "data/tidy/standardized_data_with_conditions.csv",
+  output_dir = "results",
+  verbose = TRUE
+)
+```
+
+**What happens automatically:**
+- ✓ Loads standardized data from script 01
+- ✓ Groups by formulation and test condition (device + pressure)
+- ✓ Pools technical replicates (averages CDFs before W1 calculation)
+- ✓ Calculates W1 distance between each test condition and its reference
+- ✓ Computes both absolute W₁ (µm) and normalized W₁/d₅₀
+- ✓ Creates `results/` folder
+- ✓ Saves results to `results/wasserstein_results.csv`
+- ✓ Validates results (checks for negative W1, extreme values, etc.)
+
+**Expected console output:**
 ```
 ========================================================================
 CALCULATING WASSERSTEIN-1 DISTANCES
 ========================================================================
 Reference condition: RODOS
-Test condition: INHALER
+Test conditions: INHALER (multiple device/pressure combinations)
 Methodology: Pool replicates → Calculate W1
+Output file: results/wasserstein_results.csv
 ------------------------------------------------------------------------
 
-Formulations to process: 7
-Processing: FormA ... W1 = 0.3245 µm, W1/d50 = 0.0891
-Processing: FormB ... W1 = 0.4123 µm, W1/d50 = 0.1156
-...
+Formulations to process: 3
+Formulation IDs: INU_SULFB_20-1, MAN_SULFB_20-1, TRE_SULFB_20-1
+
+Processing formulation: INU_SULFB_20-1
+  Reference: 3 replicates pooled
+  Test condition: high_1kPa → W1 = 2.34 µm
+  Test condition: high_2kPa → W1 = 1.89 µm
+  Test condition: high_4kPa → W1 = 1.45 µm
+  ...
 
 ========================================================================
 WASSERSTEIN CALCULATION COMPLETE
 ========================================================================
-Successfully calculated W1 for 7 formulations
+Total comparisons: 81 (3 formulations × 27 test conditions)
+Results saved to: results/wasserstein_results.csv
+```
+
+**Results table structure:**
+```
+formulation      device_resistance  pressure_drop  W1_micrometers  W1_normalized  d50_reference_um  d50_test_um
+INU_SULFB_20-1   high              1              2.34            0.68           3.45              5.12
+INU_SULFB_20-1   high              2              1.89            0.55           3.45              4.68
+INU_SULFB_20-1   high              4              1.45            0.42           3.45              4.23
 ...
 ```
 
-**Results table columns:**
-- `W1_micrometers` - **Use this for DoE analysis** (absolute dispersibility)
-- `d50_reference_um` - Reference median diameter
-- `d50_test_um` - Test median diameter
-- `W1_normalized` - W1/d50 ratio (for cross-formulation comparison)
-- `d50_shift_um` - Difference in median diameters
+### Step 5: Generate Visualizations
 
----
-
-## 📊 What You Get
-
-### After Data Import (Step 4)
-
-**In-memory R object** - The imported `data` tibble with these columns:
-
-| Column | Description | Example Values |
-|--------|-------------|----------------|
-| `particle_size_um` | Particle diameter in micrometers | 0.5, 1.0, 2.0, ... 100 |
-| `q3_percent` | Cumulative volume distribution (0-100%) | 0, 10.5, 45.2, ... 100 |
-| `q3_cdf` | Cumulative distribution function (0-1) | 0, 0.105, 0.452, ... 1.0 |
-| `formulation` | Formulation identifier (from folder name) | "FormA", "Run2", "132067_IMT" |
-| `module` | Dispersion module (standardized) | "INHALER", "RODOS" |
-| `replicate` | Replicate identifier (auto-standardized) | "rep1", "rep2", "rep3" |
-| `source_file` | Full path to original CSV | "data/FormA/inhaler/rep1.csv" |
-
-**Saved file** - `data/tidy/standardized_data.csv`
-- Cleaned and validated data ready for analysis
-- Can be quickly reloaded with `load_standardized_data()`
-- Used by downstream scripts (02, 03)
-
-### After Wasserstein Calculation (Step 7)
-
-The `w1_results` object is a tibble with dispersibility metrics:
-
-| Column | Description | Use For |
-|--------|-------------|---------|
-| `formulation` | Formulation identifier | Grouping |
-| `W1_micrometers` | **Absolute W1 distance in µm** | **DoE analysis** |
-| `d50_reference_um` | Reference median diameter (µm) | Context |
-| `d50_test_um` | Test median diameter (µm) | Context |
-| `W1_normalized` | W1/d50 ratio (dimensionless) | Cross-study comparison |
-| `d50_shift_um` | Test d50 - Reference d50 (µm) | Understanding shift |
-
-**For Design of Experiments (DoE):** Use `W1_micrometers` as your response variable. Lower values indicate better dispersibility (less redistribution needed to match fully dispersed state).
-
----
-
-## 🔧 Troubleshooting
-
-### Problem: "Some files have NA formulation"
-
-**Cause:** The `formulation_pattern` doesn't match your folder names.
-
-**Solution:** Try using the entire folder name:
 ```r
+# Load the visualization script
+source("scripts/03_visualization.R")
+
+# Generate all publication-ready plots
+generate_all_plots(
+  data = data,
+  w1_results = w1_results,
+  output_dir = "figures"
+)
+```
+
+**What happens automatically:**
+- ✓ Loads standardized data and W1 results
+- ✓ Pools replicates (same methodology as W1 calculations)
+- ✓ Creates `figures/` folder
+- ✓ Generates individual PDFs for each formulation-condition pair
+- ✓ Creates overlay PDFs showing reference vs all test conditions
+- ✓ Produces W1 ranking plots
+- ✓ All plots use publication-ready formatting (high resolution, proper labels, color schemes)
+
+**Generated files:**
+```
+figures/
+├── INU_SULFB_20-1_reference_vs_high_1kPa.pdf
+├── INU_SULFB_20-1_reference_vs_high_2kPa.pdf
+├── INU_SULFB_20-1_reference_vs_high_4kPa.pdf
+├── INU_SULFB_20-1_all_test_conditions.pdf    # Overlay of all conditions
+├── w1_ranking_by_condition.pdf               # Dispersibility comparison
+└── ...
+```
+
+---
+
+## 🔧 Advanced Usage
+
+### Custom Formulation ID Extraction
+
+If your folder names contain extra information you don't need:
+
+```r
+# Example: Folders named "Batch1_FormA_2025" → Extract "FormA"
 data <- read_ld_data_from_structure(
-  data_directory = "data/",
-  formulation_pattern = ".*",  # Use entire folder name
+  data_directory = "data",
+  formulation_pattern = "Form[A-Z]",  # Extracts FormA, FormB, etc.
+  verbose = TRUE
+)
+
+# Example: Numeric codes only from "132067_IMT_highTemp"
+formulation_pattern = "\\d+"  # Extracts 132067
+
+# Default: Use entire folder name (most common)
+formulation_pattern = ".*"
+```
+
+### Manual Function Calls (More Control)
+
+Instead of `run_data_import()`, you can call functions individually:
+
+```r
+# Step 1: Import with custom settings
+data <- read_ld_data_from_structure(
+  data_directory = "data",
+  output_dir = "data/processed",           # Custom output location
+  output_filename = "my_data.csv",         # Custom filename
+  save_output = TRUE,
+  verbose = TRUE
+)
+
+# Step 2: Validate separately
+validate_ld_data(data, check_replicates = TRUE, min_replicates = 3)
+
+# Step 3: Calculate W1 with custom parameters
+w1_results <- calculate_pairwise_wasserstein(
+  data = data,
+  reference_module = "RODOS",
+  test_module = "INHALER",
+  output_dir = "custom_results",
+  output_filename = "w1_analysis.csv",
+  save_output = TRUE,
   verbose = TRUE
 )
 ```
 
-### Problem: "Some files have NA module"
+### Subset Analysis
 
-**Cause:** Subfolders are not named "inhaler" or "rodos".
+Analyze only specific formulations or conditions:
 
-**Solution:** Check your folder structure:
 ```r
-# List all subdirectories to see what they're called
-list.dirs("data/", recursive = TRUE)
+# Filter to specific formulations
+data_subset <- data %>%
+  filter(formulation %in% c("FormA", "FormB"))
+
+# Calculate W1 for subset
+w1_subset <- calculate_pairwise_wasserstein(
+  data = data_subset,
+  verbose = TRUE
+)
+
+# Visualize subset
+generate_all_plots(
+  data = data_subset,
+  w1_results = w1_subset,
+  output_dir = "figures/subset"
+)
 ```
-
-Rename folders to contain "inhaler" or "rodos" (case doesn't matter).
-
-### Problem: "Some files have NA replicate"
-
-**Cause:** Filenames don't contain "rep1", "rep2", "rep3".
-
-**Solution:**
-
-**Option A - Adjust the pattern** to match your naming:
-```r
-# For uppercase Rep_1 format
-replicate_pattern = "[Rr]ep_?\\d+"
-
-# For "replicate1" format
-replicate_pattern = "replicate\\d+"
-
-# For "r1" format
-replicate_pattern = "r\\d+"
-```
-
-**Option B - Find which files are problematic:**
-```r
-data %>%
-  filter(is.na(replicate)) %>%
-  distinct(source_file)
-```
-
-Then either rename those files or adjust the pattern.
-
-### Problem: "Some conditions have fewer than 3 replicates"
-
-**Cause:** Missing CSV files for some formulations.
-
-**Solution:** Check which formulation-module combinations are incomplete:
-```r
-data %>%
-  distinct(formulation, module, replicate) %>%
-  count(formulation, module) %>%
-  filter(n < 3)
-```
-
-Find the missing files and add them to the correct folders.
-
-### Problem: "No CSV files found"
-
-**Cause:** Wrong directory path or files are in wrong location.
-
-**Solution:**
-```r
-# Check your current working directory
-getwd()
-
-# List files to verify structure
-list.files("data/", recursive = TRUE, pattern = "\\.csv$")
-```
-
-Make sure you're in the repository root and CSV files are in `data/` subdirectories.
 
 ---
 
-## 🔧 Troubleshooting Wasserstein Calculations
+## 🔍 Understanding the Output
 
-### Problem: "Negative W1 values detected"
+### Standardized Data CSV
+**Location:** `data/tidy/standardized_data_with_conditions.csv`
 
-**Cause:** This is mathematically impossible and indicates a calculation error.
+**Key columns:**
+- `particle_size_um` - Particle diameter (µm)
+- `q3_percent` - Cumulative volume % (0-100)
+- `q3_cdf` - Cumulative distribution function (0-1)
+- `formulation` - Formulation identifier
+- `module` - RODOS or INHALER
+- `device_resistance` - low/medium/high/reference
+- `pressure_drop_clean` - Pressure drop (kPa) - NA for RODOS
+- `replicate` - rep1, rep2, rep3... (assigned by timestamp)
+- `measurement_time` - Timestamp from PAQXOS
+- `source_file` - Original CSV path
 
-**Solution:** Check your data:
+**Expected NAs:**
+- `pressure_drop_clean` should be NA for all RODOS rows (reference has no pressure drop)
+- This is correct behavior and will pass validation
+
+### Wasserstein Results CSV
+**Location:** `results/wasserstein_results.csv`
+
+**Key columns:**
+- `W1_micrometers` - **Primary metric for DoE analysis** - Absolute dispersibility distance
+- `W1_normalized` - W1/d50 ratio for cross-formulation comparison
+- `d50_reference_um` - Median diameter of reference (RODOS) distribution
+- `d50_test_um` - Median diameter of test (INHALER) distribution
+- `d50_shift_um` - Difference (test - reference)
+- `device_resistance` - Test device resistance level
+- `pressure_drop` - Test pressure drop condition
+
+**Interpretation:**
+- **Lower W1 = Better dispersibility** (closer to fully dispersed state)
+- W1 ≈ 0 µm would mean perfect dispersion (INHALER = RODOS)
+- W1 > 5 µm typically indicates poor dispersibility
+- Use `W1_micrometers` for statistical modeling (DoE, regression)
+- Use `W1_normalized` for comparing formulations with different particle sizes
+
+---
+
+## 🐛 Troubleshooting
+
+### Import Issues
+
+**Problem:** "No CSV files found"
 ```r
-# Verify CDFs are properly formed (0 to 1, monotonic increasing)
+# Solution: Check your working directory
+getwd()
+list.files("data", recursive = TRUE, pattern = "\\.csv$")
+```
+
+**Problem:** "Could not auto-detect PAQXOS header row"
+- **Cause:** CSV file doesn't have expected PAQXOS structure
+- **Solution:** Verify files are exported from Sympatec PAQXOS (not manually edited)
+
+**Problem:** "Some files have NA formulation"
+- **Cause:** PAQXOS metadata missing `formulation_id` field AND folder path doesn't match pattern
+- **Solution:** Either add `formulation_id` to PAQXOS exports or adjust `formulation_pattern`
+
+### Validation Issues
+
+**Problem:** "VALIDATION FAILED: NA values detected"
+- **Check the warning message** - it shows which columns have unexpected NAs
+- `pressure_drop_clean` NAs for RODOS rows are **expected and correct**
+- Other NAs indicate data quality issues
+
+**Problem:** "Some conditions have fewer than 3 replicates"
+```r
+# Solution: Check which combinations are incomplete
+data %>%
+  distinct(source_file, formulation, module, device_resistance, pressure_drop_clean) %>%
+  count(formulation, module, device_resistance, pressure_drop_clean) %>%
+  filter(n < 3)
+```
+
+### Wasserstein Calculation Issues
+
+**Problem:** "Negative W1 values detected"
+- **Cause:** Mathematically impossible - indicates data error
+- **Solution:** Check CDF values are properly formed (0 to 1, monotonically increasing)
+
+```r
+# Diagnostic check
 data %>%
   group_by(source_file) %>%
   summarise(
@@ -406,150 +484,41 @@ data %>%
   filter(min_cdf < 0 | max_cdf > 1 | !is_monotonic)
 ```
 
-### Problem: "W1/d50 values exceed 2.0"
-
-**Cause:** Very poor dispersibility or potential data quality issues.
-
-**Solution:** This is a warning, not necessarily an error. Large W1/d50 values can be legitimate for highly cohesive powders, but you should:
-1. Visually inspect the CDFs for the flagged formulation
-2. Verify the raw CSV files are correct
-3. Check if RODOS reference shows proper dispersion
-
-### Problem: "Some formulations show negative d50 shifts"
-
-**Cause:** Test condition (INHALER) produced finer aerosol than reference (RODOS).
-
-**Solution:** This is unusual but possible. It might indicate:
-- Inhaler is more efficient than expected (good!)
-- RODOS didn't fully disperse the powder (check pressure)
-- Data quality issue (verify raw files)
-
-### Problem: W1 calculation fails for specific formulation
-
-**Cause:** Usually missing data or file read errors.
-
-**Solution:**
+**Problem:** "W1 calculation fails for specific formulation"
 ```r
-# Check which formulation failed
-formulations <- unique(data$formulation)
-
-# Verify data exists for that formulation
+# Check data availability
 data %>%
-  filter(formulation == "ProblemFormulation") %>%
-  count(module, replicate)
+  filter(formulation == "ProblematicFormulation") %>%
+  count(module, device_resistance, pressure_drop_clean, replicate)
 
-# Check if pooling worked
-pool_replicate_cdfs(data, "ProblemFormulation", "RODOS")
-pool_replicate_cdfs(data, "ProblemFormulation", "INHALER")
-```
-
----
-
-## 📋 Complete Workflow Example
-
-Here's the full pipeline from raw data to W1 results:
-
-```r
-# ============================================================================
-# COMPLETE DISPERSIBILITY ANALYSIS WORKFLOW
-# ============================================================================
-
-# Set working directory
-setwd("~/Documents/GitHub/Wasserstein_DPI")
-
-# Install packages (only needed once)
-# install.packages("tidyverse")
-# install.packages("janitor")
-
-library(tidyverse)
-
-# ----------------------------------------------------------------------------
-# STEP 1: IMPORT DATA
-# ----------------------------------------------------------------------------
-source("scripts/01_data_import.R")
-
-# Option A: Full import from raw data (first time or when data changes)
-data <- read_ld_data_from_structure(
-  data_directory = "data/",
-  formulation_pattern = ".*",           # Use entire folder name
-  replicate_pattern = "[Rr]ep_?\\d+",   # Flexible replicate matching
-  save_output = TRUE,                   # Auto-saves to data/tidy/
-  verbose = TRUE
-)
-
-# Option B: Load previously processed data (subsequent runs - much faster!)
-# data <- load_standardized_data()
-
-# Validate data structure
-validate_ld_data(data, check_replicates = TRUE, min_replicates = 3)
-
-# Quick check
-data %>%
-  distinct(formulation, module, replicate) %>%
-  count(formulation, module) %>%
-  pivot_wider(names_from = module, values_from = n, values_fill = 0)
-
-# ----------------------------------------------------------------------------
-# STEP 2: CALCULATE WASSERSTEIN DISTANCES
-# ----------------------------------------------------------------------------
-source("scripts/02_wasserstein_core.R")
-
-w1_results <- calculate_pairwise_wasserstein(
+# Check if pooling works
+pool_replicate_cdfs(
   data,
-  reference_module = "RODOS",
-  test_module = "INHALER",
-  verbose = TRUE
+  formulation_value = "ProblematicFormulation",
+  module_value = "RODOS"
 )
-
-# Validate W1 results
-validate_wasserstein_results(w1_results)
-
-# View results
-print(w1_results, n = Inf)
-
-# ----------------------------------------------------------------------------
-# STEP 3: SAVE RESULTS
-# ----------------------------------------------------------------------------
-# Save W1 results for DoE analysis
-write_csv(w1_results, "wasserstein_results.csv")
-
-# Save a summary for quick reference
-w1_summary <- w1_results %>%
-  select(formulation, W1_micrometers, W1_normalized) %>%
-  arrange(W1_micrometers)  # Sort by dispersibility (best first)
-
-write_csv(w1_summary, "dispersibility_ranking.csv")
-
-cat("\n========================================================================\n")
-cat("ANALYSIS COMPLETE\n")
-cat("========================================================================\n")
-cat("Files saved:\n")
-cat("  - wasserstein_results.csv (full results)\n")
-cat("  - dispersibility_ranking.csv (summary)\n")
-cat("\nNext steps:\n")
-cat("  1. Use W1_micrometers for DoE modeling\n")
-cat("  2. Generate visualizations (scripts coming soon)\n")
-cat("  3. Run statistical analysis (scripts coming soon)\n")
-cat("========================================================================\n")
 ```
 
 ---
 
-## 🎯 Next Steps
+## 📊 Statistical Analysis
 
-Once your data is successfully imported and W1 distances calculated:
+Once you have W1 results, you can use them for design-of-experiments analysis:
 
-1. ✅ **Import data** (`01_data_import.R`) - Complete!
-2. ✅ **Calculate Wasserstein distances** (`02_wasserstein_core.R`) - Complete!
-3. ✅ **Generate visualizations** (`03_visualization.R`) - Complete!
-   - Individual PDFs per formulation (RODOS vs INHALER)
-   - Overlay PDF of all INHALER distributions
-   - W1 ranking bars (PNG)
-   - Additional plots available as functions (d50, panels, density)
-4. **Run statistical analysis** (script coming soon)
-   - Mixture model fitting
-   - Component effects
-   - Composition-response relationships
+```r
+# Load W1 results
+w1_results <- read_csv("results/wasserstein_results.csv")
+
+# Use W1_micrometers as response variable in your DoE model
+# Example: If you have compositional predictors (x1, x2, x3)
+model <- lm(W1_micrometers ~ x1 + x2 + x3 + x1:x2 + x1:x3 + x2:x3,
+            data = design_matrix)
+
+# Or for mixture designs:
+library(mixexp)
+model <- MixtureLM(W1_micrometers ~ x1 + x2 + x3,
+                   data = design_matrix)
+```
 
 ---
 
@@ -557,10 +526,10 @@ Once your data is successfully imported and W1 distances calculated:
 
 If you use this toolkit in your research, please cite:
 
-**Paper in preparation:**
+**Dispersibility methodology:**
 Xia G, Dechayont B, Che L, Comfort I, Brunaugh AD. "A Distribution-Based Metric for Quantifying Dispersibility in Dry Powder Inhalers." *Pharmaceutics* (submitted 2025).
 
-**Methodology reference:**
+**Application example:**
 Xia G, Bennett N, Watts A, Brunaugh AD. "Mapping a Ternary Carbohydrate Design Space for Stable and Dispersible Protein Dry Powders." *Molecular Pharmaceutics* (submitted 2025).
 
 ---
@@ -569,18 +538,24 @@ Xia G, Bennett N, Watts A, Brunaugh AD. "Mapping a Ternary Carbohydrate Design S
 
 Found a bug or have a suggestion? Please open an issue on GitHub!
 
+Potential improvements we're considering:
+- [ ] Parallel processing for large datasets
+- [ ] Interactive Shiny dashboard for real-time visualization
+- [ ] Support for additional disperser types beyond RODOS/INHALER
+- [ ] Automated report generation (R Markdown templates)
+
 ---
 
 ## 📝 License
 
-[Add your license here - MIT, GPL, etc.]
+MIT License - Free to use for academic and commercial purposes
 
 ---
 
 ## 👥 Authors
 
-- **Grace Xia** - Data analysis and method development
-- **Ashlee D. Brunaugh** - Principal investigator and toolkit design
+- **Grace Xia** - Method development, data analysis, and software implementation
+- **Ashlee D. Brunaugh** - Principal investigator, project design, and scientific oversight
 
 University of Michigan, College of Pharmacy, Department of Pharmaceutical Sciences
 
@@ -588,4 +563,53 @@ University of Michigan, College of Pharmacy, Department of Pharmaceutical Scienc
 
 ## 📧 Contact
 
-Questions? Email: brunaugh@umich.edu
+Questions or feedback? Email: brunaugh@umich.edu
+
+---
+
+## 🎓 Acknowledgments
+
+This work was supported by [add funding information].
+
+Special thanks to the pharmaceutical sciences community for valuable feedback during method development.
+
+---
+
+## 📖 Additional Documentation
+
+### Key Methodological Notes
+
+**Replicate Pooling:**
+The toolkit follows best practices by pooling technical replicates before calculating Wasserstein distances. This means:
+1. For each condition, replicate CDFs are averaged at each particle size
+2. W1 is calculated once between the pooled distributions
+3. This approach treats replicates as measurement uncertainty, not biological variation
+
+**Why timestamp-based replicate assignment?**
+- Eliminates manual filename labeling errors
+- Deterministic and reproducible
+- Works across different naming conventions
+- Handles multiple test conditions automatically
+
+**Validation philosophy:**
+- Expected NAs (RODOS pressure drops) are allowed
+- Unexpected NAs trigger warnings but not errors
+- Data quality checks happen at every step
+- Clear messages help diagnose issues quickly
+
+### Computational Performance
+
+**Typical runtime (90 files, 3 formulations):**
+- Script 01 (import): ~5-10 seconds
+- Script 02 (W1 calculation): ~1-2 seconds
+- Script 03 (visualization): ~10-20 seconds
+- Total: ~20-30 seconds
+
+**Memory requirements:**
+- Minimal - tested with datasets up to 1000 files
+- Peak memory usage typically < 500 MB
+
+**Scaling considerations:**
+- Runtime scales linearly with number of files
+- Visualization time scales with number of conditions
+- Consider subset analysis for very large datasets (>1000 files)
