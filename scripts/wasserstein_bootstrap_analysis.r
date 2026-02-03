@@ -1030,5 +1030,13 @@ run_bootstrap_analysis <- function(data_file = NULL, n_bootstrap = 2000,
   ))
 }
 
+# ==============================================================================
+# OPTIONAL: Auto-run (disabled by default)
+# ==============================================================================
+AUTO_RUN_BOOTSTRAP <- FALSE
 
+if (AUTO_RUN_BOOTSTRAP) {
+  message("AUTO_RUN_BOOTSTRAP=TRUE; running bootstrap analysis...")
+  .bootstrap_analysis <- run_bootstrap_analysis(verbose = TRUE)
+}
 
