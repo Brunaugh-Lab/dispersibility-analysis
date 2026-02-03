@@ -483,6 +483,8 @@ export_formulation_overlay_reference_plus_all_tests <- function(
 
 # ==============================================================================
 # FUNCTION: Plot Wasserstein Distance Bars (auto-adapts to dataset shape)
+#   Goal: produce a sensible default regardless of whether the user has
+#   (a) many formulations, (b) one formulation, (c) one/both condition axes.
 # ==============================================================================
 
 plot_w1_bars <- function(
@@ -495,7 +497,8 @@ plot_w1_bars <- function(
   filename = "w1_ranking.pdf",
   width = NULL,
   height = NULL,
-  dpi = 300
+  dpi = 300,
+  verbose = TRUE
 ) {
 
   facet_mode <- match.arg(facet_mode)
@@ -517,7 +520,7 @@ plot_w1_bars <- function(
     stop("w1_results is missing: ", paste(missing_cols, collapse = ", "), call. = FALSE)
   }
 
-  # ---- levels + ordering ----
+  # ---- factor levels + nice labels ----
   device_levels <- w1_results |>
     dplyr::distinct(device_resistance) |>
     dplyr::arrange(device_resistance) |>
@@ -546,16 +549,14 @@ plot_w1_bars <- function(
   plot_data <- w1_results |>
     dplyr::mutate(
       device_resistance = factor(device_resistance, levels = device_levels),
-      pressure_drop     = factor(pressure_drop,     levels = pressure_levels),
-      # A human-readable condition key for “single formulation / many conditions” cases
-      condition = paste(as.character(device_resistance), as.character(pressure_drop), sep = ", ")
+      pressure_drop     = factor(pressure_drop,     levels = pressure_levels)
     )
 
   n_formulations <- dplyr::n_distinct(plot_data$formulation)
   n_devices      <- length(device_levels)
   n_pressures    <- length(pressure_levels)
 
-  # ---- sorting ----
+  # ---- sorting (by formulation if >1, else by condition) ----
   if (isTRUE(sort_by)) {
     if (n_formulations > 1) {
       order_levels <- plot_data |>
@@ -567,7 +568,12 @@ plot_w1_bars <- function(
       plot_data <- plot_data |>
         dplyr::mutate(formulation = factor(formulation, levels = order_levels))
     } else {
-      # one formulation -> sort conditions instead
+      plot_data <- plot_data |>
+        dplyr::mutate(
+          condition = paste(as.character(device_resistance),
+                            as.character(pressure_drop), sep = ", ")
+        )
+
       order_levels <- plot_data |>
         dplyr::group_by(condition) |>
         dplyr::summarise(mean_metric = mean(.data[[metric]], na.rm = TRUE), .groups = "drop") |>
@@ -577,9 +583,21 @@ plot_w1_bars <- function(
       plot_data <- plot_data |>
         dplyr::mutate(condition = factor(condition, levels = order_levels))
     }
+  } else {
+    if (n_formulations == 1) {
+      plot_data <- plot_data |>
+        dplyr::mutate(
+          condition = paste(as.character(device_resistance),
+                            as.character(pressure_drop), sep = ", ")
+        )
+    }
   }
 
-  # ---- AUTO facet decision ----
+  # ---- AUTO mode: pick a sensible grammar based on dataset shape ----
+  # If multiple formulations: your original “facet when available” is good.
+  # If single formulation: prefer a single panel with dodged bars rather than a facet grid.
+  facet_mode_original <- facet_mode
+
   if (facet_mode == "auto") {
     facet_mode <- if (n_devices > 1 && n_pressures > 1) {
       "grid"
@@ -590,64 +608,145 @@ plot_w1_bars <- function(
     } else {
       "none"
     }
+
+    if (isTRUE(verbose)) {
+      reason <- dplyr::case_when(
+        n_devices > 1 && n_pressures > 1 ~
+          "both device_resistance and pressure_drop vary",
+        n_devices > 1 ~
+          "only device_resistance varies",
+        n_pressures > 1 ~
+          "only pressure_drop varies",
+        TRUE ~
+          "no device or pressure variation detected"
+      )
+
+      x_var <- if (n_formulations > 1) "formulation" else "condition"
+
+      cat(sprintf(
+        "W1 plot auto-faceting: %s → facet_mode = %s (n_formulations=%d, n_devices=%d, n_pressures=%d; x=%s)\n",
+        reason, facet_mode, n_formulations, n_devices, n_pressures, x_var
+      ))
+    }
   }
 
-  # ---- choose x-axis based on dataset shape ----
-  x_var <- if (n_formulations > 1) "formulation" else "condition"
-  x_lab <- if (n_formulations > 1) "Formulation" else "Condition (device, pressure)"
 
-  # ---- build plot ----
-  p <- ggplot2::ggplot(
-    plot_data,
-    ggplot2::aes(x = .data[[x_var]], y = .data[[metric]])
-  ) +
-    ggplot2::geom_col(fill = "#1F78B4", color = "black", linewidth = 0.3) +
-    ggplot2::labs(
-      x = x_lab,
-      y = y_label,
-      title = "Dispersibility Ranking (W₁)",
-      subtitle = sprintf(
-        "Data shape: %d formulation(s), %d device level(s), %d pressure level(s)",
-        n_formulations, n_devices, n_pressures
-      )
-    ) +
-    ggplot2::theme_classic(base_size = 12) +
-    ggplot2::theme(
-      axis.text.x = ggplot2::element_text(angle = 45, hjust = 1, face = "bold", size = 9),
-      axis.title  = ggplot2::element_text(face = "bold"),
-      panel.grid.major.y = ggplot2::element_line(color = "grey90", linewidth = 0.3),
-      plot.title    = ggplot2::element_text(face = "bold", size = 16),
-      plot.subtitle = ggplot2::element_text(size = 11),
-      strip.background = ggplot2::element_rect(fill = "grey90", color = "black"),
-      strip.text       = ggplot2::element_text(face = "bold", size = 10)
-    )
+  # ---- BUILD PLOT (two branches) ----
+  if (n_formulations > 1) {
 
-  # ---- facets (optional) ----
-  if (facet_mode == "grid") {
-    p <- p + ggplot2::facet_grid(
-      device_resistance ~ pressure_drop,
-      labeller = ggplot2::labeller(
-        device_resistance = device_labels,
-        pressure_drop     = pressure_labels
+    # x = formulation; one bar per formulation per condition, separated by facets
+    p <- ggplot2::ggplot(plot_data, ggplot2::aes(x = formulation, y = .data[[metric]])) +
+      ggplot2::geom_col(fill = "#1F78B4", color = "black", linewidth = 0.3) +
+      ggplot2::labs(
+        x = "Formulation",
+        y = y_label,
+        title = "Dispersibility Ranking (W₁)"
+      ) +
+      ggplot2::theme_classic(base_size = 12) +
+      ggplot2::theme(
+        axis.text.x = ggplot2::element_text(angle = 45, hjust = 1, face = "bold", size = 9),
+        axis.title  = ggplot2::element_text(face = "bold"),
+        panel.grid.major.y = ggplot2::element_line(color = "grey90", linewidth = 0.3),
+        plot.title    = ggplot2::element_text(face = "bold", size = 16),
+        strip.background = ggplot2::element_rect(fill = "grey90", color = "black"),
+        strip.text       = ggplot2::element_text(face = "bold", size = 10)
       )
-    )
-  } else if (facet_mode == "device") {
-    p <- p + ggplot2::facet_wrap(
-      ~ device_resistance,
-      nrow = 1,
-      labeller = ggplot2::labeller(device_resistance = device_labels)
-    )
-  } else if (facet_mode == "pressure") {
-    p <- p + ggplot2::facet_wrap(
-      ~ pressure_drop,
-      nrow = 1,
-      labeller = ggplot2::labeller(pressure_drop = pressure_labels)
-    )
+
+    if (facet_mode == "grid") {
+      p <- p + ggplot2::facet_grid(
+        device_resistance ~ pressure_drop,
+        labeller = ggplot2::labeller(
+          device_resistance = device_labels,
+          pressure_drop     = pressure_labels
+        )
+      )
+    } else if (facet_mode == "device") {
+      p <- p + ggplot2::facet_wrap(
+        ~ device_resistance, nrow = 1,
+        labeller = ggplot2::labeller(device_resistance = device_labels)
+      )
+    } else if (facet_mode == "pressure") {
+      p <- p + ggplot2::facet_wrap(
+        ~ pressure_drop, nrow = 1,
+        labeller = ggplot2::labeller(pressure_drop = pressure_labels)
+      )
+    }
+
+  } else {
+
+    # single formulation: show conditions directly, with best encoding
+    # If both vary: x = pressure, fill = device (dodged)
+    # If only one varies: x = that one, single color
+    if (n_devices > 1 && n_pressures > 1) {
+      p <- ggplot2::ggplot(
+        plot_data,
+        ggplot2::aes(x = pressure_drop, y = .data[[metric]], fill = device_resistance)
+      ) +
+        ggplot2::geom_col(
+          position = ggplot2::position_dodge(width = 0.9),
+          color = "black",
+          linewidth = 0.3
+        ) +
+        ggplot2::scale_fill_viridis_d(
+          option = "plasma",
+          name = "Device Resistance",
+          breaks = device_levels,
+          labels = unname(device_labels[device_levels])
+        ) +
+        ggplot2::labs(
+          x = "Pressure Drop",
+          y = y_label,
+          title = paste0("Dispersibility Across Conditions (", unique(as.character(plot_data$formulation)), ")")
+        ) +
+        ggplot2::theme_classic(base_size = 12) +
+        ggplot2::theme(
+          axis.text.x = ggplot2::element_text(angle = 45, hjust = 1, face = "bold", size = 9),
+          axis.title  = ggplot2::element_text(face = "bold"),
+          panel.grid.major.y = ggplot2::element_line(color = "grey90", linewidth = 0.3),
+          plot.title    = ggplot2::element_text(face = "bold", size = 16),
+          legend.position = "bottom",
+          legend.title = ggplot2::element_text(face = "bold")
+        )
+
+    } else if (n_devices > 1) {
+      p <- ggplot2::ggplot(plot_data, ggplot2::aes(x = device_resistance, y = .data[[metric]])) +
+        ggplot2::geom_col(fill = "#1F78B4", color = "black", linewidth = 0.3) +
+        ggplot2::scale_x_discrete(labels = unname(device_labels[device_levels])) +
+        ggplot2::labs(
+          x = "Device Resistance",
+          y = y_label,
+          title = paste0("Dispersibility Across Device Conditions (", unique(as.character(plot_data$formulation)), ")")
+        ) +
+        ggplot2::theme_classic(base_size = 12)
+
+    } else if (n_pressures > 1) {
+      p <- ggplot2::ggplot(plot_data, ggplot2::aes(x = pressure_drop, y = .data[[metric]])) +
+        ggplot2::geom_col(fill = "#1F78B4", color = "black", linewidth = 0.3) +
+        ggplot2::scale_x_discrete(labels = unname(pressure_labels[pressure_levels])) +
+        ggplot2::labs(
+          x = "Pressure Drop",
+          y = y_label,
+          title = paste0("Dispersibility Across Pressure Conditions (", unique(as.character(plot_data$formulation)), ")")
+        ) +
+        ggplot2::theme_classic(base_size = 12) +
+        ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 45, hjust = 1, face = "bold", size = 9))
+
+    } else {
+      # truly single point
+      p <- ggplot2::ggplot(plot_data, ggplot2::aes(x = formulation, y = .data[[metric]])) +
+        ggplot2::geom_col(fill = "#1F78B4", color = "black", linewidth = 0.3) +
+        ggplot2::labs(
+          x = "Formulation",
+          y = y_label,
+          title = "Dispersibility (W₁)"
+        ) +
+        ggplot2::theme_classic(base_size = 12)
+    }
   }
 
   # ---- sizing defaults ----
   if (is.null(width)) {
-    width <- if (x_var == "formulation") max(10, 4 + n_formulations * 1.2) else max(10, 4 + dplyr::n_distinct(plot_data$condition) * 0.8)
+    width <- if (n_formulations > 1) max(10, 4 + n_formulations * 1.2) else 10
   }
   if (is.null(height)) {
     height <- if (facet_mode == "grid") max(6, 2 + n_devices * 2.0) else 6
