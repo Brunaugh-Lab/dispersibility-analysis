@@ -58,7 +58,9 @@
 #'   - q3_cdf_sd: Standard deviation across replicates
 #'   - n_replicates: Number of replicates pooled
 #'
-pool_replicate_cdfs <- function(data, formulation_value, module_value, device_resistance = NULL, pressure_drop = NULL) {
+pool_replicate_cdfs <- function(data, formulation_value, module_value,
+                                device_resistance_value = NULL,
+                                pressure_drop_value = NULL) {
 
   pooled_cdf <- data |>
     dplyr::filter(
@@ -66,14 +68,14 @@ pool_replicate_cdfs <- function(data, formulation_value, module_value, device_re
       module == module_value
     )
 
-  if (!is.null(device_resistance)) {
+  if (!is.null(device_resistance_value)) {
     pooled_cdf <- pooled_cdf |>
-      dplyr::filter(device_resistance == device_resistance)
+      dplyr::filter(device_resistance == device_resistance_value)
   }
 
-  if (!is.null(pressure_drop)) {
+  if (!is.null(pressure_drop_value)) {
     pooled_cdf <- pooled_cdf |>
-      dplyr::filter(pressure_drop_clean == pressure_drop)
+      dplyr::filter(pressure_drop_clean == pressure_drop_value)
   }
 
   pooled_cdf |>
@@ -86,7 +88,6 @@ pool_replicate_cdfs <- function(data, formulation_value, module_value, device_re
     ) |>
     dplyr::arrange(particle_size_um)
 }
-
 
 # ==============================================================================
 # CORE FUNCTION: Calculate Wasserstein-1 distance
@@ -271,9 +272,11 @@ calculate_pairwise_wasserstein <- function(
 
       # Pool replicates for THIS specific test condition
       test_pooled <- pool_replicate_cdfs(
-        data, form, test_module,
-        device_resistance = dev,
-        pressure_drop = press
+        data,
+        formulation_value = form,
+        module_value = test_module,
+        device_resistance_value = dev,
+        pressure_drop_value = press
       )
 
       # Check that we have test data
