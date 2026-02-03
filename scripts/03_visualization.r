@@ -3,21 +3,33 @@
 # Visualization Functions for Dispersibility Analysis
 #
 # PURPOSE
-#   Publication-ready plotting functions for comparing particle size
-#   distributions and dispersibility metrics across formulations.
-#   This script defines visualization utilities only and does NOT
-#   execute automatically when sourced.
+#   Publication-ready plotting utilities for particle size distributions
+#   and dispersibility metrics. All CDF-based plots follow the same
+#   replicate-pooling logic used in Wasserstein-1 calculations (script 02).
+#
+#   This script defines visualization functions only and does NOT
+#   auto-execute when sourced.
 #
 # ------------------------------------------------------------------
 # HOW TO USE (MANUAL EXECUTION)
 #
 #   source("scripts/03_visualization.R")
 #
-#   data <- readr::read_csv(file.path(data_dir, "tidy", "standardized_data_with_conditions.csv"), show_col_types = FALSE)
+#   data <- readr::read_csv(
+#     file.path(data_dir, "tidy", "standardized_data_with_conditions.csv"),
+#     show_col_types = FALSE
+#   )
 #
-#   w1_results <- readr::read_csv(file.path(results_dir, "wasserstein_results.csv"), show_col_types = FALSE)
+#   w1_results <- readr::read_csv(
+#     file.path(results_dir, "wasserstein_results.csv"),
+#     show_col_types = FALSE
+#   )
 #
-#   generate_all_plots(data = data, w1_results = w1_results, output_dir = figures_dir)
+#   generate_all_plots(
+#     data = data,
+#     w1_results = w1_results,
+#     output_dir = figures_dir
+#   )
 #
 # ------------------------------------------------------------------
 # INPUTS (from upstream pipeline)
@@ -25,20 +37,24 @@
 #   - results/wasserstein_results.csv                   (script 02)
 #
 # OUTPUTS
-#   - figures/*.pdf and figures/*.png
+#   - figures/*.pdf
 #
 #   Examples:
-#     * One PDF per formulation (RODOS vs INHALER comparison)
-#     * One overlay PDF (all INHALER distributions)
+#     * One PDF per formulation showing pooled reference (RODOS) vs
+#       all available INHALER test conditions
+#     * Per-formulation reference vs single-condition comparison PDFs
 #     * W₁ ranking and factor-faceted bar plots
 #
 # ------------------------------------------------------------------
 # AVAILABLE PLOTTING FUNCTIONS
 #
-#   - plot_individual_formulation_pdfs()
-#   - plot_all_inhaler_overlay()
-#   - plot_w1_bars()
-#   - create_publication_panel()
+#   Core CDF plots:
+#     - plot_reference_vs_test()
+#     - export_pairwise_condition_pdfs()
+#     - export_formulation_overlay_reference_plus_all_tests()
+#
+#   Summary / metric plots:
+#     - plot_w1_bars()
 #
 #   Factor-faceted plots:
 #     - plot_cdf_by_device()
@@ -47,11 +63,11 @@
 #     - plot_w1_by_pressure()
 #
 # ------------------------------------------------------------------
-# DESIGN FEATURES
-#   - Flexible: supports arbitrary n × m experimental designs
-#   - Smart factor ordering: low → medium → high; numeric pressures
-#   - Dynamic sizing: figure dimensions scale with design complexity
-#   - Publication formatting: consistent themes, labels, and scales
+# DESIGN PRINCIPLES
+#   - Consistent with W1 methodology: replicates are pooled before plotting
+#   - Explicit reference vs test comparisons (no implicit overlays)
+#   - Modular functions with no side effects on source()
+#   - Publication-oriented defaults with defensive input checks
 #
 # ==============================================================================
 
