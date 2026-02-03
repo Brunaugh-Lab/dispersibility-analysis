@@ -7,8 +7,8 @@
 #          data and generates figures.
 #
 # Auto-execution: Script automatically runs when sourced
-#   - Reads data_v2/tidy/standardized_data.csv (from script 01)
-#   - Reads results_v2/wasserstein_results.csv (from script 02)
+#   - Reads data/tidy/standardized_data_with_conditions.csv (from script 01)
+#   - Reads results/wasserstein_results.csv (from script 02)
 #   - Generates figures and saves to figures/
 #     * One PDF per formulation (RODOS vs INHALER comparison)
 #     * One overlay PDF (all INHALER distributions)
@@ -22,45 +22,34 @@
 # - **NEW**: 4 factor-faceted plotting functions for simplified comparisons
 # - Creates publication-ready PDFs with dynamic sizing
 # - Auto-detects experimental design (devices × pressures × formulations)
-
+#
 # **New Plot Types:**
 # - `CDF_by_device.pdf` - All formulations compared across device resistance levels
 # - `CDF_by_pressure.pdf` - All formulations compared across pressure drop levels
 # - `W1_by_device.pdf` - Dispersibility metrics faceted by device resistance
 # - `W1_by_pressure.pdf` - Dispersibility metrics faceted by pressure drop
-
+#
 # **Features:**
 # - Flexible design: Works with any n×m experimental design
 # - Smart sorting: Natural ordering of factors (low→med→high, numeric pressures)
 # - Dynamic sizing: Plot dimensions scale automatically
 # - Publication formatting: Consistent themes, proper axis labels
-# ```
-
-# #### **2b. Update figures_v2/ Directory**
-# The script will create these new files when run:
-# ```
-# figures_v2/
-# ├── CDF_by_device.pdf        ← NEW
-# ├── CDF_by_pressure.pdf      ← NEW
-# ├── W1_by_device.pdf         ← NEW
-# └── W1_by_pressure.pdf       ← NEW
-#
-# Input:
-#   - data_v2/tidy/standardized_data.csv
-#   - results_v2/wasserstein_results.csv
-# Output: figures/*.pdf and figures/*.png
-#
-# Designed for: Single test condition vs reference (e.g., INHALER vs RODOS)
-#               Focus on formulation-level comparisons
-#
-# Usage:
-#   source("scripts/03_visualization.R")  # That's it!
-#
 # ==============================================================================
 
 library(tidyverse)
 library(viridis)
 library(patchwork)  # For combining plots
+
+# ==============================================================================
+# PATH CONFIG (canonical pipeline directories)
+# ==============================================================================
+data_dir    <- "data"
+results_dir <- "results"
+figures_dir <- "figures"
+
+# Canonical input file paths
+tidy_data_path <- file.path(data_dir, "tidy", "standardized_data_with_conditions.csv")
+w1_results_path <- file.path(results_dir, "wasserstein_results.csv")
 
 # ==============================================================================
 # FUNCTION 1: Plot Individual Formulation Comparison (PDF per formulation)
@@ -72,7 +61,7 @@ plot_individual_formulation_pdfs <- function(
     test_module = "INHALER",
     formulations = NULL,
     color_palette = c("RODOS" = "#E31A1C", "INHALER" = "#1F78B4"),
-    output_dir = "figures_v2",
+    output_dir = figures_dir,
     width = 8,
     height = 6,
     verbose = TRUE
@@ -139,23 +128,18 @@ plot_individual_formulation_pdfs <- function(
       mutate(module = factor(module, levels = c(reference_module, test_module)))
 
     # FLEXIBLE: Auto-detect factor levels and create natural ordering
-    # For device_resistance: natural order (low, medium, high) or alphabetical
     device_levels <- summary_data %>%
       distinct(device_resistance) %>%
       arrange(device_resistance) %>%
       pull(device_resistance)
 
-    # Try to sort as: low < medium < high if those levels exist
     if (all(c("low", "medium", "high") %in% device_levels)) {
       device_levels <- c("low", "medium", "high")
     }
 
-    # For pressure_drop: extract numeric values and sort
     pressure_levels <- summary_data %>%
       distinct(pressure_drop_clean) %>%
-      mutate(
-        numeric_pressure = as.numeric(str_extract(pressure_drop_clean, "\\d+"))
-      ) %>%
+      mutate(numeric_pressure = as.numeric(str_extract(pressure_drop_clean, "\\d+"))) %>%
       arrange(numeric_pressure) %>%
       pull(pressure_drop_clean)
 
@@ -165,7 +149,6 @@ plot_individual_formulation_pdfs <- function(
         pressure_drop_clean = factor(pressure_drop_clean, levels = pressure_levels)
       )
 
-    # FLEXIBLE: Create human-readable labels
     device_labels <- setNames(
       str_to_title(str_replace_all(device_levels, "_", " ")),
       device_levels
@@ -176,11 +159,10 @@ plot_individual_formulation_pdfs <- function(
       pressure_levels
     )
 
-    # FLEXIBLE: Calculate optimal plot dimensions based on number of facets
     n_devices <- length(device_levels)
     n_pressures <- length(pressure_levels)
-    plot_width <- max(10, 4 + n_pressures * 3)  # Min 10", scales with columns
-    plot_height <- max(8, 3 + n_devices * 2.5)  # Min 8", scales with rows
+    plot_width <- max(10, 4 + n_pressures * 3)
+    plot_height <- max(8, 3 + n_devices * 2.5)
 
     p <- ggplot(summary_data, aes(x = particle_size_um, y = q3_percent_mean,
                                    color = module, fill = module)) +
@@ -248,7 +230,7 @@ plot_all_inhaler_overlay <- function(
     data,
     test_module = "INHALER",
     formulations = NULL,
-    output_dir = "figures_v2",
+    output_dir = figures_dir,
     filename = "all_inhaler_overlay.pdf",
     width = 10,
     height = 6,
@@ -275,7 +257,6 @@ plot_all_inhaler_overlay <- function(
     ) %>%
     mutate(q3_percent_sd = ifelse(is.na(q3_percent_sd), 0, q3_percent_sd))
 
-  # FLEXIBLE: Auto-detect factor levels
   device_levels <- summary_data %>%
     distinct(device_resistance) %>%
     arrange(device_resistance) %>%
@@ -297,7 +278,6 @@ plot_all_inhaler_overlay <- function(
       pressure_drop_clean = factor(pressure_drop_clean, levels = pressure_levels)
     )
 
-  # Create labels
   device_labels <- setNames(
     str_to_title(str_replace_all(device_levels, "_", " ")),
     device_levels
@@ -312,7 +292,6 @@ plot_all_inhaler_overlay <- function(
   n_devices <- length(device_levels)
   n_pressures <- length(pressure_levels)
 
-  # Dynamic plot sizing
   plot_width <- max(12, 5 + n_pressures * 3)
   plot_height <- max(8, 3 + n_devices * 2.5)
 
@@ -463,10 +442,10 @@ plot_w1_bars <- function(
     metric = "W1_micrometers",
     sort_by = TRUE,
     save_plot = FALSE,
-    output_dir = "figures_v2",
+    output_dir = figures_dir,
     filename = "w1_ranking.pdf",
-    width = NULL,  # Now auto-calculated if NULL
-    height = NULL, # Now auto-calculated if NULL
+    width = NULL,
+    height = NULL,
     dpi = 300
 ) {
 
@@ -482,7 +461,6 @@ plot_w1_bars <- function(
     stop("metric must be one of: W1_micrometers, W1_normalized, d50_shift_um")
   }
 
-  # FLEXIBLE: Auto-detect factor levels
   device_levels <- w1_results %>%
     distinct(device_resistance) %>%
     arrange(device_resistance) %>%
@@ -505,7 +483,6 @@ plot_w1_bars <- function(
     )
 
   if (sort_by) {
-    # Sort formulations by mean metric across all conditions
     order_levels <- w1_results %>%
       group_by(formulation) %>%
       summarise(mean_metric = mean(.data[[metric]], na.rm = TRUE), .groups = 'drop') %>%
@@ -516,7 +493,6 @@ plot_w1_bars <- function(
       mutate(formulation = factor(formulation, levels = order_levels))
   }
 
-  # Create labels
   device_labels <- setNames(
     str_to_title(str_replace_all(device_levels, "_", " ")),
     device_levels
@@ -531,7 +507,6 @@ plot_w1_bars <- function(
   n_pressures <- length(pressure_levels)
   n_formulations <- n_distinct(plot_data$formulation)
 
-  # FLEXIBLE: Auto-calculate dimensions if not provided
   if (is.null(width)) {
     width <- max(10, 5 + n_pressures * 2 + n_formulations * 0.5)
   }
@@ -586,7 +561,7 @@ plot_d50_comparison <- function(
     reference_color = "#E31A1C",
     test_color = "#1F78B4",
     save_plot = FALSE,
-    output_dir = "figures_v2",
+    output_dir = figures_dir,
     filename = "d50_comparison.png",
     width = 10,
     height = 6,
@@ -661,7 +636,7 @@ plot_cdf_by_device <- function(
     test_module = "INHALER",
     formulation_colors = NULL,
     pressure_linetypes = NULL,
-    output_dir = "figures_v2",
+    output_dir = figures_dir,
     filename = "CDF_by_device.pdf",
     width = NULL,
     height = NULL,
@@ -672,11 +647,9 @@ plot_cdf_by_device <- function(
     dir.create(output_dir, recursive = TRUE)
   }
 
-  # Prepare data
   plot_data <- data %>%
     filter(module %in% c(reference_module, test_module))
 
-  # Pool RODOS (add to all device panels)
   rodos_summary <- plot_data %>%
     filter(module == reference_module) %>%
     group_by(formulation, particle_size_um) %>%
@@ -687,7 +660,6 @@ plot_cdf_by_device <- function(
     ) %>%
     mutate(q3_percent_sd = ifelse(is.na(q3_percent_sd), 0, q3_percent_sd))
 
-  # Pool INHALER by device×pressure
   inhaler_summary <- plot_data %>%
     filter(module == test_module) %>%
     group_by(formulation, device_resistance, pressure_drop_clean, particle_size_um) %>%
@@ -698,7 +670,6 @@ plot_cdf_by_device <- function(
     ) %>%
     mutate(q3_percent_sd = ifelse(is.na(q3_percent_sd), 0, q3_percent_sd))
 
-  # Auto-detect device levels
   device_levels <- inhaler_summary %>%
     distinct(device_resistance) %>%
     arrange(device_resistance) %>%
@@ -708,14 +679,12 @@ plot_cdf_by_device <- function(
     device_levels <- c("low", "medium", "high")
   }
 
-  # Auto-detect pressure levels and sort numerically
   pressure_levels <- inhaler_summary %>%
     distinct(pressure_drop_clean) %>%
     mutate(numeric_pressure = as.numeric(str_extract(pressure_drop_clean, "\\d+"))) %>%
     arrange(numeric_pressure) %>%
     pull(pressure_drop_clean)
 
-    # Auto-generate linetypes if not provided
   if (is.null(pressure_linetypes)) {
     linetype_options <- c("solid", "dashed", "dotted", "dotdash", "longdash", "twodash")
     n_pressures_detected <- length(pressure_levels)
@@ -725,33 +694,28 @@ plot_cdf_by_device <- function(
     )
   }
 
-  # Factor levels
   inhaler_summary <- inhaler_summary %>%
     mutate(
       device_resistance = factor(device_resistance, levels = device_levels),
       pressure_drop_clean = factor(pressure_drop_clean, levels = pressure_levels)
     )
 
-  # Create device labels
   device_labels <- setNames(
     str_to_title(str_replace_all(device_levels, "_", " ")),
     device_levels
   )
 
-  # Auto-generate formulation colors if not provided
   n_formulations <- n_distinct(inhaler_summary$formulation)
   if (is.null(formulation_colors)) {
     formulation_colors <- viridis_pal(option = "turbo")(n_formulations)
     names(formulation_colors) <- sort(unique(inhaler_summary$formulation))
   }
 
-  # Calculate dimensions
   n_devices <- length(device_levels)
   if (is.null(width)) width <- max(12, 4 * n_devices)
   if (is.null(height)) height <- 6
 
   p <- ggplot() +
-    # INHALER data only (varies by device and pressure)
     geom_line(data = inhaler_summary,
               aes(x = particle_size_um, y = q3_percent_mean,
                   color = formulation, linetype = pressure_drop_clean),
@@ -814,7 +778,7 @@ plot_cdf_by_pressure <- function(
     test_module = "INHALER",
     formulation_colors = NULL,
     device_linetypes = NULL,
-    output_dir = "figures_v2",
+    output_dir = figures_dir,
     filename = "CDF_by_pressure.pdf",
     width = NULL,
     height = NULL,
@@ -825,7 +789,6 @@ plot_cdf_by_pressure <- function(
     dir.create(output_dir, recursive = TRUE)
   }
 
-  # Prepare data (same as plot_cdf_by_device)
   plot_data <- data %>%
     filter(module %in% c(reference_module, test_module))
 
@@ -849,13 +812,11 @@ plot_cdf_by_pressure <- function(
     ) %>%
     mutate(q3_percent_sd = ifelse(is.na(q3_percent_sd), 0, q3_percent_sd))
 
-  # Auto-detect levels
   device_levels <- inhaler_summary %>%
     distinct(device_resistance) %>%
     arrange(device_resistance) %>%
     pull(device_resistance)
 
-# Auto-generate linetypes if not provided
   if (is.null(device_linetypes)) {
     linetype_options <- c("solid", "dashed", "dotted", "dotdash", "longdash", "twodash")
     n_devices_detected <- length(device_levels)
@@ -881,26 +842,22 @@ plot_cdf_by_pressure <- function(
       pressure_drop_clean = factor(pressure_drop_clean, levels = pressure_levels)
     )
 
-  # Create pressure labels
   pressure_labels <- setNames(
     str_replace(pressure_levels, "_", " "),
     pressure_levels
   )
 
-  # Auto-generate colors
   n_formulations <- n_distinct(inhaler_summary$formulation)
   if (is.null(formulation_colors)) {
     formulation_colors <- viridis_pal(option = "turbo")(n_formulations)
     names(formulation_colors) <- sort(unique(inhaler_summary$formulation))
   }
 
-  # Calculate dimensions
   n_pressures <- length(pressure_levels)
   if (is.null(width)) width <- max(12, 4 * n_pressures)
   if (is.null(height)) height <- 6
 
   p <- ggplot() +
-    # INHALER data only
     geom_line(data = inhaler_summary,
               aes(x = particle_size_um, y = q3_percent_mean,
                   color = formulation, linetype = device_resistance),
@@ -960,7 +917,7 @@ plot_cdf_by_pressure <- function(
 plot_w1_by_device <- function(
     w1_results,
     metric = "W1_micrometers",
-    output_dir = "figures_v2",
+    output_dir = figures_dir,
     filename = "W1_by_device.pdf",
     width = NULL,
     height = NULL,
@@ -982,7 +939,6 @@ plot_w1_by_device <- function(
     stop("metric must be one of: W1_micrometers, W1_normalized, d50_shift_um")
   }
 
-  # Auto-detect levels
   device_levels <- w1_results %>%
     distinct(device_resistance) %>%
     arrange(device_resistance) %>%
@@ -1004,7 +960,6 @@ plot_w1_by_device <- function(
       pressure_drop = factor(pressure_drop, levels = pressure_levels)
     )
 
-  # Create labels
   device_labels <- setNames(
     str_to_title(str_replace_all(device_levels, "_", " ")),
     device_levels
@@ -1015,7 +970,6 @@ plot_w1_by_device <- function(
     pressure_levels
   )
 
-  # Calculate dimensions
   n_devices <- length(device_levels)
   n_pressures <- length(pressure_levels)
   n_formulations <- n_distinct(plot_data$formulation)
@@ -1063,7 +1017,7 @@ plot_w1_by_device <- function(
 plot_w1_by_pressure <- function(
     w1_results,
     metric = "W1_micrometers",
-    output_dir = "figures_v2",
+    output_dir = figures_dir,
     filename = "W1_by_pressure.pdf",
     width = NULL,
     height = NULL,
@@ -1085,7 +1039,6 @@ plot_w1_by_pressure <- function(
     stop("metric must be one of: W1_micrometers, W1_normalized, d50_shift_um")
   }
 
-  # Auto-detect levels
   device_levels <- w1_results %>%
     distinct(device_resistance) %>%
     arrange(device_resistance) %>%
@@ -1107,7 +1060,6 @@ plot_w1_by_pressure <- function(
       pressure_drop = factor(pressure_drop, levels = pressure_levels)
     )
 
-  # Create labels
   device_labels <- setNames(
     str_to_title(str_replace_all(device_levels, "_", " ")),
     device_levels
@@ -1118,7 +1070,6 @@ plot_w1_by_pressure <- function(
     pressure_levels
   )
 
-  # Calculate dimensions
   n_devices <- length(device_levels)
   n_pressures <- length(pressure_levels)
   n_formulations <- n_distinct(plot_data$formulation)
@@ -1162,7 +1113,6 @@ plot_w1_by_pressure <- function(
 # ==============================================================================
 # FUNCTION 5: Create Publication Figure Panel
 # ==============================================================================
-
 create_publication_panel <- function(
     data,
     w1_results,
@@ -1170,7 +1120,7 @@ create_publication_panel <- function(
     reference_module = "RODOS",
     test_module = "INHALER",
     save_plot = FALSE,
-    output_dir = "figures_v2",
+    output_dir = figures_dir,
     filename = "dispersibility_panel.png",
     width = 16,
     height = 12,
@@ -1209,16 +1159,13 @@ create_publication_panel <- function(
   return(combined)
 }
 
-
-
 # ==============================================================================
 # CONVENIENCE FUNCTION: Generate all standard plots
 # ==============================================================================
-
 generate_all_plots <- function(
     data,
     w1_results,
-    output_dir = "figures_v2",
+    output_dir = figures_dir,
     reference_module = "RODOS",
     test_module = "INHALER",
     verbose = TRUE
@@ -1261,11 +1208,11 @@ generate_all_plots <- function(
     metric = "W1_micrometers",
     save_plot = TRUE,
     output_dir = output_dir,
-    filename = "w1_ranking.pdf",  # <-- CHANGED to PDF
+    filename = "w1_ranking.pdf",
     width = 10,
     height = 6
   )
-  # NEW: Factor-faceted plots
+
   if (verbose) cat("Creating CDF plot faceted by device...\n")
   p_cdf_device <- plot_cdf_by_device(
     data,
@@ -1320,26 +1267,26 @@ generate_all_plots <- function(
 # ==============================================================================
 # AUTO-EXECUTION: Generate plots when script is sourced
 # ==============================================================================
-
-tidy_data_exists <- file.exists("data_v2/tidy/standardized_data_with_conditions.csv")
-results_exist <- file.exists("results_v2/wasserstein_results.csv")
+tidy_data_exists <- file.exists(tidy_data_path)
+results_exist <- file.exists(w1_results_path)
 
 if (tidy_data_exists && results_exist) {
 
   cat("\n========================================================================\n")
   cat("AUTO-RUNNING VISUALIZATION\n")
   cat("========================================================================\n")
-  cat("Reading: data_v2/tidy/standardized_data_with_conditions.csv\n")
-  cat("Reading: results_v2/wasserstein_results.csv\n")
-  cat("Saving to: figures_v2/\n")
+  cat("Reading: ", tidy_data_path, "\n", sep = "")
+  cat("Reading: ", w1_results_path, "\n", sep = "")
+  cat("Saving to: ", figures_dir, "/\n", sep = "")
   cat("------------------------------------------------------------------------\n")
 
-  .viz_data <- read_csv("data_v2/tidy/standardized_data_with_conditions.csv", show_col_types = FALSE)
-  .viz_results <- read_csv("results_v2/wasserstein_results.csv", show_col_types = FALSE)
+  .viz_data <- readr::read_csv(tidy_data_path, show_col_types = FALSE)
+  .viz_results <- readr::read_csv(w1_results_path, show_col_types = FALSE)
 
   .viz_plots <- generate_all_plots(
     data = .viz_data,
     w1_results = .viz_results,
+    output_dir = figures_dir,
     verbose = TRUE
   )
 
@@ -1350,15 +1297,15 @@ if (tidy_data_exists && results_exist) {
   n_formulations <- n_distinct(.viz_data$formulation)
   n_devices <- n_distinct(.viz_data$device_resistance)
   n_pressures <- n_distinct(.viz_data$pressure_drop_clean)
-  cat(sprintf("  - figures_v2/*_comparison_faceted.pdf (%d formulations, %d×%d grids)\n",
-              n_formulations, n_devices, n_pressures))
-  cat(sprintf("  - figures_v2/all_inhaler_overlay.pdf (%d×%d facets)\n", n_devices, n_pressures))
-  cat(sprintf("  - figures_v2/w1_ranking.pdf (%d×%d facets)\n", n_devices, n_pressures))
+  cat(sprintf("  - %s/*_comparison_faceted.pdf (%d formulations, %d×%d grids)\n",
+              figures_dir, n_formulations, n_devices, n_pressures))
+  cat(sprintf("  - %s/all_inhaler_overlay.pdf (%d×%d facets)\n", figures_dir, n_devices, n_pressures))
+  cat(sprintf("  - %s/w1_ranking.pdf (%d×%d facets)\n", figures_dir, n_devices, n_pressures))
   cat("\n  NEW Factor-Faceted Plots:\n")
-  cat(sprintf("  - figures_v2/CDF_by_device.pdf (%d device panels)\n", n_devices))
-  cat(sprintf("  - figures_v2/CDF_by_pressure.pdf (%d pressure panels)\n", n_pressures))
-  cat(sprintf("  - figures_v2/W1_by_device.pdf (%d device panels)\n", n_devices))
-  cat(sprintf("  - figures_v2/W1_by_pressure.pdf (%d pressure panels)\n", n_pressures))
+  cat(sprintf("  - %s/CDF_by_device.pdf (%d device panels)\n", figures_dir, n_devices))
+  cat(sprintf("  - %s/CDF_by_pressure.pdf (%d pressure panels)\n", figures_dir, n_pressures))
+  cat(sprintf("  - %s/W1_by_device.pdf (%d device panels)\n", figures_dir, n_devices))
+  cat(sprintf("  - %s/W1_by_pressure.pdf (%d pressure panels)\n", figures_dir, n_pressures))
   cat("------------------------------------------------------------------------\n")
   cat("Additional plots available via functions:\n")
   cat("  - plot_d50_comparison() for median size comparison\n")
@@ -1375,12 +1322,12 @@ if (tidy_data_exists && results_exist) {
   cat("========================================================================\n")
 
   if (!tidy_data_exists) {
-    cat("✗ Tidy data not found: data_v2/tidy/standardized_data_with_conditions.csv\n")
+    cat("✗ Tidy data not found: ", tidy_data_path, "\n", sep = "")
     cat("  Run: source('scripts/01_data_import.R')\n\n")
   }
 
   if (!results_exist) {
-    cat("✗ Results not found: results_v2/wasserstein_results.csv\n")
+    cat("✗ Results not found: ", w1_results_path, "\n", sep = "")
     cat("  Run: source('scripts/02_wasserstein_core.R')\n\n")
   }
 
