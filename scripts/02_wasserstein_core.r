@@ -10,14 +10,12 @@
 #   source("scripts/02_wasserstein_core.R")
 #   w1_results <- run_wasserstein_analysis()
 #
-# Input: data_v2/tidy_v2/standardized_data_with_conditions.csv (from 01_data_import.R)
-# Output: results_v2/wasserstein_results.csv
+# Input:  data/tidy/standardized_data_with_conditions.csv (from 01_data_import.R)
+# Output: results/wasserstein_results.csv
 #
 # Methodology: Wasserstein-1 (Earth Mover's) distance quantifies the minimum
 #              redistribution work needed to transform one distribution into another
 #
-# Usage:
-#   source("scripts/02_wasserstein_core.R")  # That's it!
 #
 # Reference: Brunaugh et al. (2025) Pharmaceutics - "A Distribution-Based Metric
 #            for Quantifying Dispersibility in Dry Powder Inhalers"
@@ -203,7 +201,7 @@ calculate_pairwise_wasserstein <- function(
     data,
     reference_module = "RODOS",
     test_module = "INHALER",
-    output_dir = "results_v2",
+    output_dir = "results",
     save_output = TRUE,
     output_filename = "wasserstein_results.csv",
     verbose = TRUE
@@ -567,8 +565,8 @@ load_wasserstein_results <- function(
 #' @return Tibble with W1 results
 #'
 run_wasserstein_analysis <- function(
-    processed_dir = "data_v2/tidy",
-    results_dir = "results_v2",
+    processed_dir = "data/tidy",
+    results_dir = "results",
     reference_module = "RODOS",
     test_module = "INHALER",
     verbose = TRUE
