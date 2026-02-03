@@ -104,6 +104,60 @@ pool_replicate_cdfs <- function(data, formulation_value, module_value,
 }
 
 # ==============================================================================
+# HELPER: Interpolate pooled CDF to a target size grid
+# ==============================================================================
+
+interpolate_cdf_to_grid <- function(pooled_cdf, target_grid) {
+  stopifnot(all(c("particle_size_um", "q3_cdf_mean") %in% names(pooled_cdf)))
+
+  x <- pooled_cdf$particle_size_um
+  y <- pooled_cdf$q3_cdf_mean
+
+  # Ensure unique, sorted x for approx()
+  ord <- order(x)
+  x <- x[ord]
+  y <- y[ord]
+
+  # If duplicate x bins exist (shouldn't, but be defensive), average them
+  if (any(duplicated(x))) {
+    tmp <- dplyr::tibble(x = x, y = y) |>
+      dplyr::group_by(x) |>
+      dplyr::summarise(y = mean(y, na.rm = TRUE), .groups = "drop")
+    x <- tmp$x
+    y <- tmp$y
+  }
+
+  # Linear interpolation; rule=2 clamps beyond range to endpoints
+  y_interp <- stats::approx(
+    x = x,
+    y = y,
+    xout = target_grid,
+    method = "linear",
+    rule = 2,
+    ties = mean
+  )$y
+
+  # Clamp to valid CDF range
+  y_interp <- pmin(pmax(y_interp, 0), 1)
+
+  return(y_interp)
+}
+
+# ==============================================================================
+# HELPER: Build a common size grid for W1 comparison
+# ==============================================================================
+
+make_common_grid <- function(ref_sizes, test_sizes, grid_method = c("union", "ref", "test")) {
+  grid_method <- match.arg(grid_method)
+
+  if (grid_method == "ref")  return(sort(unique(ref_sizes)))
+  if (grid_method == "test") return(sort(unique(test_sizes)))
+
+  # default: union
+  sort(unique(c(ref_sizes, test_sizes)))
+}
+
+# ==============================================================================
 # CORE FUNCTION: Calculate Wasserstein-1 distance
 # ==============================================================================
 
@@ -300,11 +354,21 @@ calculate_pairwise_wasserstein <- function(
         next
       }
 
-      # Calculate W1 distance
+      # ---- grid alignment (interpolation) ----
+      common_grid <- make_common_grid(
+        ref_sizes  = ref_pooled$particle_size_um,
+        test_sizes = test_pooled$particle_size_um,
+        grid_method = "union"   # safest default
+      )
+
+      cdf_ref_aligned  <- interpolate_cdf_to_grid(ref_pooled,  common_grid)
+      cdf_test_aligned <- interpolate_cdf_to_grid(test_pooled, common_grid)
+
+      # ---- Calculate W1 distance on common grid ----
       w1 <- calculate_wasserstein_1d(
-        size_grid = ref_pooled$particle_size_um,
-        cdf_test = test_pooled$q3_cdf_mean,
-        cdf_ref = ref_pooled$q3_cdf_mean
+        size_grid = common_grid,
+        cdf_test  = cdf_test_aligned,
+        cdf_ref   = cdf_ref_aligned
       )
 
       # Calculate d50 values for normalization
@@ -510,8 +574,6 @@ validate_wasserstein_results <- function(w1_results, max_w1_um = Inf) {
 
   invisible(all_valid)
 }
-
-
 
 # ==============================================================================
 # CONVENIENCE FUNCTIONS: Load and run with defaults
