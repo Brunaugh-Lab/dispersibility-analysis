@@ -6,10 +6,9 @@
 #          distributions following proper methodology (pool replicates first)
 #          Automatically reads processed data and saves results.
 #
-# Auto-execution: Script automatically runs when sourced
-#   - Reads data_v2/tidy_v2/standardized_data_with_conditions.csv (from script 01)
-#   - Calculates W1 distances for all formulations
-#   - Saves to results_v2/wasserstein_results.csv
+# To run the analysis:
+#   source("scripts/02_wasserstein_core.R")
+#   w1_results <- run_wasserstein_analysis()
 #
 # Input: data_v2/tidy_v2/standardized_data_with_conditions.csv (from 01_data_import.R)
 # Output: results_v2/wasserstein_results.csv
@@ -612,48 +611,4 @@ run_wasserstein_analysis <- function(
   validate_wasserstein_results(w1_results)
 
   return(w1_results)
-}
-
-
-# ==============================================================================
-# AUTO-EXECUTION: Run analysis when script is sourced
-# ==============================================================================
-
-# Check if processed data exists
-if (file.exists("data_v2/tidy/standardized_data_with_conditions.csv")) {
-
-  cat("\n========================================================================\n")
-  cat("AUTO-RUNNING WASSERSTEIN ANALYSIS\n")
-  cat("========================================================================\n")
-  cat("Reading: data_v2/tidy/standardized_data_with_conditions.csv\n")
-  cat("Saving to: results_v2/wasserstein_results.csv\n")
-  cat("------------------------------------------------------------------------\n")
-
-  # Run the complete analysis
-  .w1_results <- run_wasserstein_analysis(verbose = TRUE)
-
-  cat("\n========================================================================\n")
-  cat("ANALYSIS COMPLETE - Results saved to results/wasserstein_results.csv\n")
-  cat("========================================================================\n")
-  cat("Use W1_micrometers column for DoE modeling\n")
-  cat("------------------------------------------------------------------------\n")
-  cat("To reload results later:\n")
-  cat("  source('scripts/02_wasserstein_core.R')\n")
-  cat("  w1_results <- load_wasserstein_results()\n")
-  cat("========================================================================\n\n")
-
-  # Clean up the auto-generated variable (optional - keeps workspace clean)
-  # Uncomment if you don't want .w1_results in the environment
-  # rm(.w1_results)
-
-} else {
-  cat("\n========================================================================\n")
-  cat("WASSERSTEIN ANALYSIS - WAITING FOR INPUT DATA\n")
-  cat("========================================================================\n")
-  cat("Tidy data not found: data_v2/tidy/standardized_data_with_conditions.csv\n")
-  cat("\nPlease run 01_data_import.R first:\n")
-  cat("  source('scripts/01_data_import.R')\n")
-  cat("\nThen run this script again:\n")
-  cat("  source('scripts/02_wasserstein_core.R')\n")
-  cat("========================================================================\n\n")
 }
