@@ -13,15 +13,9 @@
 #
 #   source("scripts/03_visualization.R")
 #
-#   data <- readr::read_csv(
-#     file.path(data_dir, "tidy", "standardized_data_with_conditions.csv"),
-#     show_col_types = FALSE
-#   )
+#   data <- readr::read_csv(file.path(data_dir, "tidy", "standardized_data_with_conditions.csv"), show_col_types = FALSE)
 #
-#   w1_results <- readr::read_csv(
-#     file.path(results_dir, "wasserstein_results.csv"),
-#     show_col_types = FALSE
-#   )
+#   w1_results <- readr::read_csv(file.path(results_dir, "wasserstein_results.csv"), show_col_types = FALSE)
 #
 #   generate_all_plots(data = data, w1_results = w1_results, output_dir = figures_dir)
 #
@@ -92,185 +86,175 @@ tidy_data_path  <- file.path(data_dir, "tidy", "standardized_data_with_condition
 w1_results_path <- file.path(results_dir, "wasserstein_results.csv")
 
 # ==============================================================================
-# FUNCTION 1: Plot Individual Formulation Comparison (PDF per formulation)
+# CORE PLOTTER: Reference vs Single Test Condition (returns ggplot object)
 # ==============================================================================
 
-plot_individual_formulation_pdfs <- function(
-    data,
-    reference_module = "RODOS",
-    test_module = "INHALER",
-    formulations = NULL,
-    color_palette = c("RODOS" = "#E31A1C", "INHALER" = "#1F78B4"),
-    output_dir = figures_dir,
-    width = 8,
-    height = 6,
-    verbose = TRUE
+plot_reference_vs_test <- function(
+  ref_summary,
+  test_summary,
+  reference_label = "RODOS",
+  test_label = "Test",
+  color_palette = c("reference" = "#E31A1C", "test" = "#1F78B4")
+) {
+
+  required <- c("particle_size_um", "q3_percent_mean", "q3_percent_sd")
+  missing_ref  <- setdiff(required, names(ref_summary))
+  missing_test <- setdiff(required, names(test_summary))
+
+  if (length(missing_ref) > 0) {
+    stop("ref_summary is missing: ", paste(missing_ref, collapse = ", "), call. = FALSE)
+  }
+  if (length(missing_test) > 0) {
+    stop("test_summary is missing: ", paste(missing_test, collapse = ", "), call. = FALSE)
+  }
+
+  summary_data <- dplyr::bind_rows(
+    dplyr::mutate(ref_summary,  curve = "reference"),
+    dplyr::mutate(test_summary, curve = "test")
+  ) |>
+    dplyr::mutate(
+      curve = factor(curve, levels = c("reference", "test")),
+      curve = dplyr::recode(curve, reference = reference_label, test = test_label)
+    )
+
+  ggplot2::ggplot(
+    summary_data,
+    ggplot2::aes(
+      x = .data$particle_size_um,
+      y = .data$q3_percent_mean,
+      color = .data$curve,
+      fill  = .data$curve
+    )
+  ) +
+    ggplot2::geom_ribbon(
+      ggplot2::aes(
+        ymin = .data$q3_percent_mean - .data$q3_percent_sd,
+        ymax = .data$q3_percent_mean + .data$q3_percent_sd
+      ),
+      alpha = 0.15,
+      color = NA
+    ) +
+    ggplot2::geom_line(linewidth = 1.0) +
+    ggplot2::scale_x_log10(
+      limits = c(0.5, 100),
+      breaks = c(0.5, 1, 2, 5, 10, 20, 50, 100)
+    ) +
+    ggplot2::scale_y_continuous(limits = c(0, 100)) +
+    ggplot2::scale_color_manual(values = c(reference_label = color_palette["reference"],
+                                           test_label      = color_palette["test"]),
+                                name = NULL) +
+    ggplot2::scale_fill_manual(values = c(reference_label = color_palette["reference"],
+                                          test_label      = color_palette["test"]),
+                               guide = "none") +
+    ggplot2::labs(
+      x = "Particle Size (µm)",
+      y = expression("Cumulative Distribution " * Q[3] * " (%)")
+    ) +
+    ggplot2::theme_classic(base_size = 12)
+}
+
+# ==============================================================================
+# EXPORTER: Save Reference vs Test PDFs for All Formulations × Conditions
+# ==============================================================================
+
+export_pairwise_condition_pdfs <- function(
+  data,
+  reference_module = "RODOS",
+  test_module = "INHALER",
+  condition_cols = c("device_resistance", "pressure_drop_clean"),
+  output_dir = figures_dir,
+  verbose = TRUE
 ) {
 
   if (!dir.exists(output_dir)) {
     dir.create(output_dir, recursive = TRUE)
   }
 
-  if (!is.null(formulations)) {
-    data <- dplyr::filter(data, formulation %in% formulations)
-  }
+  formulations <- unique(data$formulation)
 
-  plot_data <- dplyr::filter(data, module %in% c(reference_module, test_module))
+  for (form in formulations) {
 
-  formulation_list <- unique(plot_data$formulation)
+    form_data <- dplyr::filter(data, .data$formulation == form)
 
-  plots <- list()
-
-  for (form in formulation_list) {
-
-    form_data <- dplyr::filter(plot_data, formulation == form)
-
-    # Pool RODOS reference (no device/pressure filtering)
-    rodos_summary <- form_data |>
-      dplyr::filter(module == reference_module) |>
-      dplyr::group_by(particle_size_um) |>
+    # ---- reference (pooled once per formulation) ----
+    ref_summary <- form_data |>
+      dplyr::filter(.data$module == reference_module) |>
+      dplyr::group_by(.data$particle_size_um) |>
       dplyr::summarise(
-        q3_percent_mean = mean(q3_percent, na.rm = TRUE),
-        q3_percent_sd   = stats::sd(q3_percent, na.rm = TRUE),
+        q3_percent_mean = mean(.data$q3_percent, na.rm = TRUE),
+        q3_percent_sd   = stats::sd(.data$q3_percent, na.rm = TRUE),
         .groups = "drop"
-      ) |>
-      dplyr::mutate(
-        q3_percent_sd = ifelse(is.na(q3_percent_sd), 0, q3_percent_sd),
-        module        = reference_module
       )
 
-    # Pool INHALER by device×pressure combination
-    inhaler_summary <- form_data |>
-      dplyr::filter(module == test_module) |>
-      dplyr::group_by(device_resistance, pressure_drop_clean, particle_size_um) |>
-      dplyr::summarise(
-        q3_percent_mean = mean(q3_percent, na.rm = TRUE),
-        q3_percent_sd   = stats::sd(q3_percent, na.rm = TRUE),
-        .groups = "drop"
-      ) |>
-      dplyr::mutate(
-        q3_percent_sd = ifelse(is.na(q3_percent_sd), 0, q3_percent_sd),
-        module        = test_module
-      )
-
-    # Get unique device-pressure combinations
-    device_pressure_combos <- dplyr::distinct(inhaler_summary, device_resistance, pressure_drop_clean)
-
-    # Expand RODOS to match all device-pressure combos (for faceting)
-    rodos_expanded <- dplyr::cross_join(device_pressure_combos, rodos_summary)
-
-    # Combine for plotting
-    summary_data <- dplyr::bind_rows(rodos_expanded, inhaler_summary) |>
-      dplyr::mutate(module = factor(module, levels = c(reference_module, test_module)))
-
-    # Auto-detect factor levels and create natural ordering
-    device_levels <- summary_data |>
-      dplyr::distinct(device_resistance) |>
-      dplyr::arrange(device_resistance) |>
-      dplyr::pull(device_resistance)
-
-    if (all(c("low", "medium", "high") %in% device_levels)) {
-      device_levels <- c("low", "medium", "high")
+    if (nrow(ref_summary) == 0) {
+      if (isTRUE(verbose)) cat("Skipping ", form, ": no reference rows\n", sep = "")
+      next
     }
 
-    pressure_levels <- summary_data |>
-      dplyr::distinct(pressure_drop_clean) |>
-      dplyr::mutate(numeric_pressure = as.numeric(stringr::str_extract(pressure_drop_clean, "\\d+"))) |>
-      dplyr::arrange(numeric_pressure) |>
-      dplyr::pull(pressure_drop_clean)
+    # ---- discover test conditions ----
+    test_conditions <- form_data |>
+      dplyr::filter(.data$module == test_module) |>
+      dplyr::distinct(dplyr::across(dplyr::all_of(condition_cols)))
 
-    summary_data <- summary_data |>
-      dplyr::mutate(
-        device_resistance   = factor(device_resistance, levels = device_levels),
-        pressure_drop_clean = factor(pressure_drop_clean, levels = pressure_levels)
-      )
-
-    device_labels <- stats::setNames(
-      stringr::str_to_title(stringr::str_replace_all(device_levels, "_", " ")),
-      device_levels
-    )
-
-    pressure_labels <- stats::setNames(
-      stringr::str_replace(pressure_levels, "_", " "),
-      pressure_levels
-    )
-
-    n_devices   <- length(device_levels)
-    n_pressures <- length(pressure_levels)
-    plot_width  <- max(10, 4 + n_pressures * 3)      # kept your logic
-    plot_height <- max(8, 3 + n_devices * 2.5)       # kept your logic
-
-    p <- ggplot2::ggplot(
-      summary_data,
-      ggplot2::aes(
-        x = particle_size_um,
-        y = q3_percent_mean,
-        color = module,
-        fill = module
-      )
-    ) +
-      ggplot2::geom_ribbon(
-        ggplot2::aes(
-          ymin = q3_percent_mean - q3_percent_sd,
-          ymax = q3_percent_mean + q3_percent_sd
-        ),
-        alpha = 0.15,
-        color = NA
-      ) +
-      ggplot2::geom_line(linewidth = 1.0) +
-      ggplot2::facet_grid(
-        device_resistance ~ pressure_drop_clean,
-        labeller = ggplot2::labeller(
-          device_resistance   = device_labels,
-          pressure_drop_clean = pressure_labels
-        )
-      ) +
-      ggplot2::scale_x_log10(
-        limits = c(0.5, 100),
-        breaks = c(0.5, 1, 2, 5, 10, 20, 50, 100),
-        labels = c("0.5", "1", "2", "5", "10", "20", "50", "100")
-      ) +
-      ggplot2::scale_y_continuous(
-        limits = c(0, 100),
-        breaks = seq(0, 100, 20)
-      ) +
-      ggplot2::scale_color_manual(values = color_palette, name = "Module") +
-      ggplot2::scale_fill_manual(values = color_palette, guide = "none") +
-      ggplot2::labs(
-        x = "Particle Size (µm)",
-        y = expression("Cumulative Distribution " * Q[3] * " (%)"),
-        title = paste("Formulation:", form),
-        subtitle = sprintf(
-          "INHALER (%d devices × %d pressures) vs %s Reference",
-          n_devices, n_pressures, reference_module
-        )
-      ) +
-      ggplot2::theme_classic(base_size = 12) +
-      ggplot2::theme(
-        panel.grid.major = ggplot2::element_line(color = "grey90", linewidth = 0.3),
-        panel.grid.minor.x = ggplot2::element_line(color = "grey95", linewidth = 0.2),
-        axis.title = ggplot2::element_text(face = "bold"),
-        legend.title = ggplot2::element_text(face = "bold"),
-        legend.position = "bottom",
-        plot.title = ggplot2::element_text(face = "bold", size = 16),
-        plot.subtitle = ggplot2::element_text(size = 11),
-        strip.background = ggplot2::element_rect(fill = "grey90", color = "black"),
-        strip.text = ggplot2::element_text(face = "bold", size = 10)
-      )
-
-    filename <- paste0(as.character(form), "_comparison_faceted.pdf")
-    output_path <- file.path(output_dir, filename)
-
-    ggplot2::ggsave(output_path, p, width = plot_width, height = plot_height, device = "pdf")
-
-    if (isTRUE(verbose)) {
-      cat(sprintf("✓ Saved: %s (%d×%d grid)\n", output_path, n_devices, n_pressures))
+    if (nrow(test_conditions) == 0) {
+      if (isTRUE(verbose)) cat("Skipping ", form, ": no test rows\n", sep = "")
+      next
     }
 
-    plots[[as.character(form)]] <- p
-  }
+    for (i in seq_len(nrow(test_conditions))) {
 
-  return(invisible(plots))
+      condition <- test_conditions[i, , drop = FALSE]
+      condition_vals <- unlist(condition, use.names = FALSE)
+
+      test_summary <- form_data |>
+        dplyr::filter(.data$module == test_module) |>
+        dplyr::filter(
+          dplyr::if_all(
+            dplyr::all_of(condition_cols),
+            ~ . == condition[[dplyr::cur_column()]]
+          )
+        ) |>
+        dplyr::group_by(.data$particle_size_um) |>
+        dplyr::summarise(
+          q3_percent_mean = mean(.data$q3_percent, na.rm = TRUE),
+          q3_percent_sd   = stats::sd(.data$q3_percent, na.rm = TRUE),
+          .groups = "drop"
+        )
+
+      if (nrow(test_summary) == 0) next
+
+      # ---- build plot ----
+      p <- plot_reference_vs_test(
+        ref_summary,
+        test_summary,
+        reference_label = reference_module,
+        test_label = paste(condition_vals, collapse = ", ")
+      )
+
+      # ---- filename ----
+      condition_slug <- paste(
+        paste(condition_cols, condition_vals, sep = "_"),
+        collapse = "__"
+      )
+
+      filename <- paste0(
+        as.character(form), "__", condition_slug, "__",
+        reference_module, "_vs_", test_module, ".pdf"
+      )
+
+      ggplot2::ggsave(
+        file.path(output_dir, filename),
+        p,
+        width = 8,
+        height = 6,
+        device = "pdf"
+      )
+
+      if (isTRUE(verbose)) {
+        cat("✓ Saved:", filename, "\n")
+      }
+    }
+  }
 }
 
 # ==============================================================================
