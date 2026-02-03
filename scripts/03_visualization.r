@@ -157,6 +157,8 @@ plot_reference_vs_test <- function(
 
 # ==============================================================================
 # EXPORTER: Save Reference vs Test PDFs for All Formulations × Conditions
+#   (Pooling matches 02_wasserstein_core.R: average within replicate first,
+#    then average across replicates)
 # ==============================================================================
 
 export_pairwise_condition_pdfs <- function(
@@ -172,19 +174,32 @@ export_pairwise_condition_pdfs <- function(
     dir.create(output_dir, recursive = TRUE)
   }
 
+  # Defensive check: replicate column must exist for replicate-first pooling
+  if (!"replicate" %in% names(data)) {
+    stop("Expected column 'replicate' not found in data.", call. = FALSE)
+  }
+
   formulations <- unique(data$formulation)
 
   for (form in formulations) {
 
     form_data <- dplyr::filter(data, .data$formulation == form)
 
-    # ---- reference (pooled once per formulation) ----
+    # ---- reference (pooled once per formulation; replicate-first) ----
     ref_summary <- form_data |>
       dplyr::filter(.data$module == reference_module) |>
+      # stage 1: one value per (replicate, size)
+      dplyr::group_by(.data$particle_size_um, .data$replicate) |>
+      dplyr::summarise(
+        q3_percent_rep = mean(.data$q3_percent, na.rm = TRUE),
+        .groups = "drop"
+      ) |>
+      # stage 2: pool across replicates at each size
       dplyr::group_by(.data$particle_size_um) |>
       dplyr::summarise(
-        q3_percent_mean = mean(.data$q3_percent, na.rm = TRUE),
-        q3_percent_sd   = stats::sd(.data$q3_percent, na.rm = TRUE),
+        q3_percent_mean = mean(.data$q3_percent_rep, na.rm = TRUE),
+        q3_percent_sd   = stats::sd(.data$q3_percent_rep, na.rm = TRUE),
+        n_replicates    = dplyr::n(),
         .groups = "drop"
       )
 
@@ -208,22 +223,32 @@ export_pairwise_condition_pdfs <- function(
       condition <- test_conditions[i, , drop = FALSE]
       condition_vals <- unlist(condition, use.names = FALSE)
 
-            test_subset <- form_data |>
-              dplyr::filter(.data$module == test_module)
+      # subset to this test condition (your explicit loop is fine + readable)
+      test_subset <- form_data |>
+        dplyr::filter(.data$module == test_module)
 
-            for (j in seq_along(condition_cols)) {
-              col <- condition_cols[j]
-              val <- condition[[col]][[1]]
-              test_subset <- dplyr::filter(test_subset, .data[[col]] == val)
-            }
+      for (j in seq_along(condition_cols)) {
+        col <- condition_cols[j]
+        val <- condition[[col]][[1]]
+        test_subset <- dplyr::filter(test_subset, .data[[col]] == val)
+      }
 
-            test_summary <- test_subset |>
-              dplyr::group_by(.data$particle_size_um) |>
-              dplyr::summarise(
-                q3_percent_mean = mean(.data$q3_percent, na.rm = TRUE),
-                q3_percent_sd   = stats::sd(.data$q3_percent, na.rm = TRUE),
-                .groups = "drop"
-              )
+      # ---- test summary (replicate-first) ----
+      test_summary <- test_subset |>
+        # stage 1: one value per (replicate, size)
+        dplyr::group_by(.data$particle_size_um, .data$replicate) |>
+        dplyr::summarise(
+          q3_percent_rep = mean(.data$q3_percent, na.rm = TRUE),
+          .groups = "drop"
+        ) |>
+        # stage 2: pool across replicates at each size
+        dplyr::group_by(.data$particle_size_um) |>
+        dplyr::summarise(
+          q3_percent_mean = mean(.data$q3_percent_rep, na.rm = TRUE),
+          q3_percent_sd   = stats::sd(.data$q3_percent_rep, na.rm = TRUE),
+          n_replicates    = dplyr::n(),
+          .groups = "drop"
+        )
 
       if (nrow(test_summary) == 0) next
 
@@ -260,6 +285,7 @@ export_pairwise_condition_pdfs <- function(
     }
   }
 }
+
 
 # ==============================================================================
 # FUNCTION 2: Plot All INHALER Distributions Overlay
