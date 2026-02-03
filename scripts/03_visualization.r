@@ -13,9 +13,15 @@
 #
 #   source("scripts/03_visualization.R")
 #
-#   data <- readr::read_csv(file.path(data_dir, "tidy", "standardized_data_with_conditions.csv"), show_col_types = FALSE)
+#   data <- readr::read_csv(
+#     file.path(data_dir, "tidy", "standardized_data_with_conditions.csv"),
+#     show_col_types = FALSE
+#   )
 #
-#   w1_results <- readr::read_csv(file.path(results_dir, "wasserstein_results.csv"), show_col_types = FALSE)
+#   w1_results <- readr::read_csv(
+#     file.path(results_dir, "wasserstein_results.csv"),
+#     show_col_types = FALSE
+#   )
 #
 #   generate_all_plots(data = data, w1_results = w1_results, output_dir = figures_dir)
 #
@@ -57,9 +63,24 @@
 #
 # ==============================================================================
 
-library(tidyverse)
-library(viridis)
-library(patchwork)  # For combining plots
+.require_pkgs <- function(pkgs) {
+  missing <- pkgs[!vapply(pkgs, requireNamespace, logical(1), quietly = TRUE)]
+  if (length(missing) > 0) {
+    stop(
+      "Missing required packages: ", paste(missing, collapse = ", "),
+      "\nInstall with:\n  install.packages(c(",
+      paste0('"', missing, '"', collapse = ", "),
+      "))",
+      call. = FALSE
+    )
+  }
+  invisible(TRUE)
+}
+
+.require_pkgs(c(
+  "ggplot2", "dplyr", "readr", "stringr", "tidyr", "purrr", "forcats", "tibble",
+  "viridis", "patchwork", "grid", "rlang"
+))
 
 # ==============================================================================
 # PATH CONFIG (canonical pipeline directories)
@@ -69,7 +90,7 @@ results_dir <- "results"
 figures_dir <- "figures"
 
 # Canonical input file paths
-tidy_data_path <- file.path(data_dir, "tidy", "standardized_data_with_conditions.csv")
+tidy_data_path  <- file.path(data_dir, "tidy", "standardized_data_with_conditions.csv")
 w1_results_path <- file.path(results_dir, "wasserstein_results.csv")
 
 # ==============================================================================
@@ -93,11 +114,10 @@ plot_individual_formulation_pdfs <- function(
   }
 
   if (!is.null(formulations)) {
-    data <- data %>% filter(formulation %in% formulations)
+    data <- dplyr::filter(data, formulation %in% formulations)
   }
 
-  plot_data <- data %>%
-    filter(module %in% c(reference_module, test_module))
+  plot_data <- dplyr::filter(data, module %in% c(reference_module, test_module))
 
   formulation_list <- unique(plot_data$formulation)
 
@@ -105,139 +125,151 @@ plot_individual_formulation_pdfs <- function(
 
   for (form in formulation_list) {
 
-    form_data <- plot_data %>%
-      filter(formulation == form)
+    form_data <- dplyr::filter(plot_data, formulation == form)
 
     # Pool RODOS reference (no device/pressure filtering)
-    rodos_summary <- form_data %>%
-      filter(module == reference_module) %>%
-      group_by(particle_size_um) %>%
-      summarise(
+    rodos_summary <- form_data |>
+      dplyr::filter(module == reference_module) |>
+      dplyr::group_by(particle_size_um) |>
+      dplyr::summarise(
         q3_percent_mean = mean(q3_percent, na.rm = TRUE),
-        q3_percent_sd = sd(q3_percent, na.rm = TRUE),
-        .groups = 'drop'
-      ) %>%
-      mutate(
+        q3_percent_sd   = stats::sd(q3_percent, na.rm = TRUE),
+        .groups = "drop"
+      ) |>
+      dplyr::mutate(
         q3_percent_sd = ifelse(is.na(q3_percent_sd), 0, q3_percent_sd),
-        module = reference_module
+        module        = reference_module
       )
 
     # Pool INHALER by device×pressure combination
-    inhaler_summary <- form_data %>%
-      filter(module == test_module) %>%
-      group_by(device_resistance, pressure_drop_clean, particle_size_um) %>%
-      summarise(
+    inhaler_summary <- form_data |>
+      dplyr::filter(module == test_module) |>
+      dplyr::group_by(device_resistance, pressure_drop_clean, particle_size_um) |>
+      dplyr::summarise(
         q3_percent_mean = mean(q3_percent, na.rm = TRUE),
-        q3_percent_sd = sd(q3_percent, na.rm = TRUE),
-        .groups = 'drop'
-      ) %>%
-      mutate(
+        q3_percent_sd   = stats::sd(q3_percent, na.rm = TRUE),
+        .groups = "drop"
+      ) |>
+      dplyr::mutate(
         q3_percent_sd = ifelse(is.na(q3_percent_sd), 0, q3_percent_sd),
-        module = test_module
+        module        = test_module
       )
 
     # Get unique device-pressure combinations
-    device_pressure_combos <- inhaler_summary %>%
-      distinct(device_resistance, pressure_drop_clean)
+    device_pressure_combos <- dplyr::distinct(inhaler_summary, device_resistance, pressure_drop_clean)
 
     # Expand RODOS to match all device-pressure combos (for faceting)
-    rodos_expanded <- device_pressure_combos %>%
-      cross_join(rodos_summary)
+    rodos_expanded <- dplyr::cross_join(device_pressure_combos, rodos_summary)
 
     # Combine for plotting
-    summary_data <- bind_rows(rodos_expanded, inhaler_summary) %>%
-      mutate(module = factor(module, levels = c(reference_module, test_module)))
+    summary_data <- dplyr::bind_rows(rodos_expanded, inhaler_summary) |>
+      dplyr::mutate(module = factor(module, levels = c(reference_module, test_module)))
 
-    # FLEXIBLE: Auto-detect factor levels and create natural ordering
-    device_levels <- summary_data %>%
-      distinct(device_resistance) %>%
-      arrange(device_resistance) %>%
-      pull(device_resistance)
+    # Auto-detect factor levels and create natural ordering
+    device_levels <- summary_data |>
+      dplyr::distinct(device_resistance) |>
+      dplyr::arrange(device_resistance) |>
+      dplyr::pull(device_resistance)
 
     if (all(c("low", "medium", "high") %in% device_levels)) {
       device_levels <- c("low", "medium", "high")
     }
 
-    pressure_levels <- summary_data %>%
-      distinct(pressure_drop_clean) %>%
-      mutate(numeric_pressure = as.numeric(str_extract(pressure_drop_clean, "\\d+"))) %>%
-      arrange(numeric_pressure) %>%
-      pull(pressure_drop_clean)
+    pressure_levels <- summary_data |>
+      dplyr::distinct(pressure_drop_clean) |>
+      dplyr::mutate(numeric_pressure = as.numeric(stringr::str_extract(pressure_drop_clean, "\\d+"))) |>
+      dplyr::arrange(numeric_pressure) |>
+      dplyr::pull(pressure_drop_clean)
 
-    summary_data <- summary_data %>%
-      mutate(
-        device_resistance = factor(device_resistance, levels = device_levels),
+    summary_data <- summary_data |>
+      dplyr::mutate(
+        device_resistance   = factor(device_resistance, levels = device_levels),
         pressure_drop_clean = factor(pressure_drop_clean, levels = pressure_levels)
       )
 
-    device_labels <- setNames(
-      str_to_title(str_replace_all(device_levels, "_", " ")),
+    device_labels <- stats::setNames(
+      stringr::str_to_title(stringr::str_replace_all(device_levels, "_", " ")),
       device_levels
     )
 
-    pressure_labels <- setNames(
-      str_replace(pressure_levels, "_", " "),
+    pressure_labels <- stats::setNames(
+      stringr::str_replace(pressure_levels, "_", " "),
       pressure_levels
     )
 
-    n_devices <- length(device_levels)
+    n_devices   <- length(device_levels)
     n_pressures <- length(pressure_levels)
-    plot_width <- max(10, 4 + n_pressures * 3)
-    plot_height <- max(8, 3 + n_devices * 2.5)
+    plot_width  <- max(10, 4 + n_pressures * 3)      # kept your logic
+    plot_height <- max(8, 3 + n_devices * 2.5)       # kept your logic
 
-    p <- ggplot(summary_data, aes(x = particle_size_um, y = q3_percent_mean,
-                                   color = module, fill = module)) +
-      geom_ribbon(
-        aes(ymin = q3_percent_mean - q3_percent_sd,
-            ymax = q3_percent_mean + q3_percent_sd),
-        alpha = 0.15, color = NA
+    p <- ggplot2::ggplot(
+      summary_data,
+      ggplot2::aes(
+        x = particle_size_um,
+        y = q3_percent_mean,
+        color = module,
+        fill = module
+      )
+    ) +
+      ggplot2::geom_ribbon(
+        ggplot2::aes(
+          ymin = q3_percent_mean - q3_percent_sd,
+          ymax = q3_percent_mean + q3_percent_sd
+        ),
+        alpha = 0.15,
+        color = NA
       ) +
-      geom_line(linewidth = 1.0) +
-      facet_grid(device_resistance ~ pressure_drop_clean,
-                 labeller = labeller(
-                   device_resistance = device_labels,
-                   pressure_drop_clean = pressure_labels
-                 )) +
-      scale_x_log10(
+      ggplot2::geom_line(linewidth = 1.0) +
+      ggplot2::facet_grid(
+        device_resistance ~ pressure_drop_clean,
+        labeller = ggplot2::labeller(
+          device_resistance   = device_labels,
+          pressure_drop_clean = pressure_labels
+        )
+      ) +
+      ggplot2::scale_x_log10(
         limits = c(0.5, 100),
         breaks = c(0.5, 1, 2, 5, 10, 20, 50, 100),
         labels = c("0.5", "1", "2", "5", "10", "20", "50", "100")
       ) +
-      scale_y_continuous(
+      ggplot2::scale_y_continuous(
         limits = c(0, 100),
         breaks = seq(0, 100, 20)
       ) +
-      scale_color_manual(values = color_palette, name = "Module") +
-      scale_fill_manual(values = color_palette, guide = "none") +
-      labs(
+      ggplot2::scale_color_manual(values = color_palette, name = "Module") +
+      ggplot2::scale_fill_manual(values = color_palette, guide = "none") +
+      ggplot2::labs(
         x = "Particle Size (µm)",
         y = expression("Cumulative Distribution " * Q[3] * " (%)"),
         title = paste("Formulation:", form),
-        subtitle = sprintf("INHALER (%d devices × %d pressures) vs %s Reference",
-                          n_devices, n_pressures, reference_module)
+        subtitle = sprintf(
+          "INHALER (%d devices × %d pressures) vs %s Reference",
+          n_devices, n_pressures, reference_module
+        )
       ) +
-      theme_classic(base_size = 12) +
-      theme(
-        panel.grid.major = element_line(color = "grey90", linewidth = 0.3),
-        panel.grid.minor.x = element_line(color = "grey95", linewidth = 0.2),
-        axis.title = element_text(face = "bold"),
-        legend.title = element_text(face = "bold"),
+      ggplot2::theme_classic(base_size = 12) +
+      ggplot2::theme(
+        panel.grid.major = ggplot2::element_line(color = "grey90", linewidth = 0.3),
+        panel.grid.minor.x = ggplot2::element_line(color = "grey95", linewidth = 0.2),
+        axis.title = ggplot2::element_text(face = "bold"),
+        legend.title = ggplot2::element_text(face = "bold"),
         legend.position = "bottom",
-        plot.title = element_text(face = "bold", size = 16),
-        plot.subtitle = element_text(size = 11),
-        strip.background = element_rect(fill = "grey90", color = "black"),
-        strip.text = element_text(face = "bold", size = 10)
+        plot.title = ggplot2::element_text(face = "bold", size = 16),
+        plot.subtitle = ggplot2::element_text(size = 11),
+        strip.background = ggplot2::element_rect(fill = "grey90", color = "black"),
+        strip.text = ggplot2::element_text(face = "bold", size = 10)
       )
 
-    filename <- paste0(form, "_comparison_faceted.pdf")
+    filename <- paste0(as.character(form), "_comparison_faceted.pdf")
     output_path <- file.path(output_dir, filename)
-    ggsave(output_path, p, width = plot_width, height = plot_height, device = "pdf")
 
-    if (verbose) {
+    ggplot2::ggsave(output_path, p, width = plot_width, height = plot_height, device = "pdf")
+
+    if (isTRUE(verbose)) {
       cat(sprintf("✓ Saved: %s (%d×%d grid)\n", output_path, n_devices, n_pressures))
     }
 
-    plots[[form]] <- p
+    plots[[as.character(form)]] <- p
   }
 
   return(invisible(plots))
@@ -253,8 +285,8 @@ plot_all_inhaler_overlay <- function(
     formulations = NULL,
     output_dir = figures_dir,
     filename = "all_inhaler_overlay.pdf",
-    width = 10,
-    height = 6,
+    width = NULL,
+    height = NULL,
     verbose = TRUE
 ) {
 
@@ -263,107 +295,129 @@ plot_all_inhaler_overlay <- function(
   }
 
   if (!is.null(formulations)) {
-    data <- data %>% filter(formulation %in% formulations)
+    data <- dplyr::filter(data, formulation %in% formulations)
   }
 
-  plot_data <- data %>%
-    filter(module == test_module)
+  plot_data <- dplyr::filter(data, module == test_module)
 
-  summary_data <- plot_data %>%
-    group_by(formulation, device_resistance, pressure_drop_clean, particle_size_um) %>%
-    summarise(
+  summary_data <- plot_data |>
+    dplyr::group_by(formulation, device_resistance, pressure_drop_clean, particle_size_um) |>
+    dplyr::summarise(
       q3_percent_mean = mean(q3_percent, na.rm = TRUE),
-      q3_percent_sd = sd(q3_percent, na.rm = TRUE),
-      .groups = 'drop'
-    ) %>%
-    mutate(q3_percent_sd = ifelse(is.na(q3_percent_sd), 0, q3_percent_sd))
+      q3_percent_sd   = stats::sd(q3_percent, na.rm = TRUE),
+      .groups = "drop"
+    ) |>
+    dplyr::mutate(q3_percent_sd = ifelse(is.na(q3_percent_sd), 0, q3_percent_sd))
 
-  device_levels <- summary_data %>%
-    distinct(device_resistance) %>%
-    arrange(device_resistance) %>%
-    pull(device_resistance)
+  if (nrow(summary_data) == 0) {
+    stop(
+      "No rows available for plotting after filtering.\n",
+      "Check that data contains module == '", test_module, "'",
+      call. = FALSE
+    )
+  }
+
+  device_levels <- summary_data |>
+    dplyr::distinct(device_resistance) |>
+    dplyr::arrange(device_resistance) |>
+    dplyr::pull(device_resistance)
 
   if (all(c("low", "medium", "high") %in% device_levels)) {
     device_levels <- c("low", "medium", "high")
   }
 
-  pressure_levels <- summary_data %>%
-    distinct(pressure_drop_clean) %>%
-    mutate(numeric_pressure = as.numeric(str_extract(pressure_drop_clean, "\\d+"))) %>%
-    arrange(numeric_pressure) %>%
-    pull(pressure_drop_clean)
+  pressure_levels <- summary_data |>
+    dplyr::distinct(pressure_drop_clean) |>
+    dplyr::mutate(numeric_pressure = as.numeric(stringr::str_extract(pressure_drop_clean, "\\d+"))) |>
+    dplyr::arrange(numeric_pressure) |>
+    dplyr::pull(pressure_drop_clean)
 
-  summary_data <- summary_data %>%
-    mutate(
-      device_resistance = factor(device_resistance, levels = device_levels),
+  summary_data <- summary_data |>
+    dplyr::mutate(
+      device_resistance   = factor(device_resistance, levels = device_levels),
       pressure_drop_clean = factor(pressure_drop_clean, levels = pressure_levels)
     )
 
-  device_labels <- setNames(
-    str_to_title(str_replace_all(device_levels, "_", " ")),
+  device_labels <- stats::setNames(
+    stringr::str_to_title(stringr::str_replace_all(device_levels, "_", " ")),
     device_levels
   )
 
-  pressure_labels <- setNames(
-    str_replace(pressure_levels, "_", " "),
+  pressure_labels <- stats::setNames(
+    stringr::str_replace(pressure_levels, "_", " "),
     pressure_levels
   )
 
-  n_formulations <- n_distinct(summary_data$formulation)
-  n_devices <- length(device_levels)
-  n_pressures <- length(pressure_levels)
+  n_formulations <- dplyr::n_distinct(summary_data$formulation)
+  n_devices      <- length(device_levels)
+  n_pressures    <- length(pressure_levels)
 
-  plot_width <- max(12, 5 + n_pressures * 3)
-  plot_height <- max(8, 3 + n_devices * 2.5)
+  # Auto-size unless user overrides
+  plot_width  <- if (is.null(width))  max(12, 5 + n_pressures * 3) else width
+  plot_height <- if (is.null(height)) max(8,  3 + n_devices   * 2.5) else height
 
-  p <- ggplot(summary_data, aes(x = particle_size_um, y = q3_percent_mean,
-                                 color = formulation, fill = formulation)) +
-    geom_ribbon(
-      aes(ymin = q3_percent_mean - q3_percent_sd,
-          ymax = q3_percent_mean + q3_percent_sd),
-      alpha = 0.1, color = NA
+  p <- ggplot2::ggplot(
+    summary_data,
+    ggplot2::aes(
+      x = particle_size_um,
+      y = q3_percent_mean,
+      color = formulation,
+      fill  = formulation
+    )
+  ) +
+    ggplot2::geom_ribbon(
+      ggplot2::aes(
+        ymin = q3_percent_mean - q3_percent_sd,
+        ymax = q3_percent_mean + q3_percent_sd
+      ),
+      alpha = 0.1,
+      color = NA
     ) +
-    geom_line(linewidth = 1.0) +
-    facet_grid(device_resistance ~ pressure_drop_clean,
-               labeller = labeller(
-                 device_resistance = device_labels,
-                 pressure_drop_clean = pressure_labels
-               )) +
-    scale_x_log10(
+    ggplot2::geom_line(linewidth = 1.0) +
+    ggplot2::facet_grid(
+      device_resistance ~ pressure_drop_clean,
+      labeller = ggplot2::labeller(
+        device_resistance   = device_labels,
+        pressure_drop_clean = pressure_labels
+      )
+    ) +
+    ggplot2::scale_x_log10(
       limits = c(0.5, 100),
       breaks = c(0.5, 1, 2, 5, 10, 20, 50, 100),
       labels = c("0.5", "1", "2", "5", "10", "20", "50", "100")
     ) +
-    scale_y_continuous(
+    ggplot2::scale_y_continuous(
       limits = c(0, 100),
       breaks = seq(0, 100, 20)
     ) +
-    scale_color_viridis_d(name = "Formulation", option = "turbo") +
-    scale_fill_viridis_d(guide = "none", option = "turbo") +
-    labs(
+    ggplot2::scale_color_viridis_d(name = "Formulation", option = "turbo") +
+    ggplot2::scale_fill_viridis_d(guide = "none", option = "turbo") +
+    ggplot2::labs(
       x = "Particle Size (µm)",
       y = expression("Cumulative Distribution " * Q[3] * " (%)"),
       title = sprintf("All %s Distributions by Device Resistance × Pressure Drop", test_module),
-      subtitle = sprintf("%d formulations across %d conditions (%d×%d grid)",
-                        n_formulations, n_devices * n_pressures, n_devices, n_pressures)
+      subtitle = sprintf(
+        "%d formulations across %d conditions (%d×%d grid)",
+        n_formulations, n_devices * n_pressures, n_devices, n_pressures
+      )
     ) +
-    theme_classic(base_size = 12) +
-    theme(
-      panel.grid.major = element_line(color = "grey90", linewidth = 0.3),
-      panel.grid.minor.x = element_line(color = "grey95", linewidth = 0.2),
-      axis.title = element_text(face = "bold"),
-      legend.title = element_text(face = "bold"),
+    ggplot2::theme_classic(base_size = 12) +
+    ggplot2::theme(
+      panel.grid.major = ggplot2::element_line(color = "grey90", linewidth = 0.3),
+      panel.grid.minor.x = ggplot2::element_line(color = "grey95", linewidth = 0.2),
+      axis.title = ggplot2::element_text(face = "bold"),
+      legend.title = ggplot2::element_text(face = "bold"),
       legend.position = "right",
-      plot.title = element_text(face = "bold", size = 16),
-      plot.subtitle = element_text(size = 11),
-      strip.background = element_rect(fill = "grey90", color = "black"),
-      strip.text = element_text(face = "bold", size = 10)
+      plot.title = ggplot2::element_text(face = "bold", size = 16),
+      plot.subtitle = ggplot2::element_text(size = 11),
+      strip.background = ggplot2::element_rect(fill = "grey90", color = "black"),
+      strip.text = ggplot2::element_text(face = "bold", size = 10)
     )
 
   output_path <- file.path(output_dir, filename)
-  ggsave(output_path, p, width = plot_width, height = plot_height, device = "pdf")
+  ggplot2::ggsave(output_path, p, width = plot_width, height = plot_height, device = "pdf")
 
-  if (verbose) {
+  if (isTRUE(verbose)) {
     cat(sprintf("✓ Saved: %s (%d×%d grid)\n", output_path, n_devices, n_pressures))
   }
 
@@ -472,61 +526,60 @@ plot_w1_bars <- function(
 
   metric_labels <- list(
     W1_micrometers = "W₁ Distance (µm)",
-    W1_normalized = "W₁/d₅₀ (Normalized)",
-    d50_shift_um = "d₅₀ Shift (µm)"
+    W1_normalized  = "W₁/d₅₀ (Normalized)",
+    d50_shift_um   = "d₅₀ Shift (µm)"
   )
 
   y_label <- metric_labels[[metric]]
-
   if (is.null(y_label)) {
-    stop("metric must be one of: W1_micrometers, W1_normalized, d50_shift_um")
+    stop("metric must be one of: W1_micrometers, W1_normalized, d50_shift_um", call. = FALSE)
   }
 
-  device_levels <- w1_results %>%
-    distinct(device_resistance) %>%
-    arrange(device_resistance) %>%
-    pull(device_resistance)
+  device_levels <- w1_results |>
+    dplyr::distinct(device_resistance) |>
+    dplyr::arrange(device_resistance) |>
+    dplyr::pull(device_resistance)
 
   if (all(c("low", "medium", "high") %in% device_levels)) {
     device_levels <- c("low", "medium", "high")
   }
 
-  pressure_levels <- w1_results %>%
-    distinct(pressure_drop) %>%
-    mutate(numeric_pressure = as.numeric(str_extract(pressure_drop, "\\d+"))) %>%
-    arrange(numeric_pressure) %>%
-    pull(pressure_drop)
+  pressure_levels <- w1_results |>
+    dplyr::distinct(pressure_drop) |>
+    dplyr::mutate(numeric_pressure = as.numeric(stringr::str_extract(pressure_drop, "\\d+"))) |>
+    dplyr::arrange(numeric_pressure) |>
+    dplyr::pull(pressure_drop)
 
-  plot_data <- w1_results %>%
-    mutate(
+  plot_data <- w1_results |>
+    dplyr::mutate(
       device_resistance = factor(device_resistance, levels = device_levels),
-      pressure_drop = factor(pressure_drop, levels = pressure_levels)
+      pressure_drop     = factor(pressure_drop, levels = pressure_levels)
     )
 
-  if (sort_by) {
-    order_levels <- w1_results %>%
-      group_by(formulation) %>%
-      summarise(mean_metric = mean(.data[[metric]], na.rm = TRUE), .groups = 'drop') %>%
-      arrange(desc(mean_metric)) %>%
-      pull(formulation)
+  if (isTRUE(sort_by)) {
+    order_levels <- w1_results |>
+      dplyr::group_by(formulation) |>
+      dplyr::summarise(mean_metric = mean(.data[[metric]], na.rm = TRUE), .groups = "drop") |>
+      dplyr::arrange(dplyr::desc(mean_metric)) |>
+      dplyr::pull(formulation)
 
-    plot_data <- plot_data %>%
-      mutate(formulation = factor(formulation, levels = order_levels))
+    plot_data <- plot_data |>
+      dplyr::mutate(formulation = factor(formulation, levels = order_levels))
   }
 
-  device_labels <- setNames(
-    str_to_title(str_replace_all(device_levels, "_", " ")),
+  device_labels <- stats::setNames(
+    stringr::str_to_title(stringr::str_replace_all(device_levels, "_", " ")),
     device_levels
   )
 
-  pressure_labels <- setNames(
-    str_replace(pressure_levels, "_", " "),
+  pressure_labels <- stats::setNames(
+    stringr::str_replace(pressure_levels, "_", " "),
     pressure_levels
   )
 
-  n_devices <- length(device_levels)
-  n_pressures <- length(pressure_levels)
-  n_formulations <- n_distinct(plot_data$formulation)
+  n_devices      <- length(device_levels)
+  n_pressures    <- length(pressure_levels)
+  n_formulations <- dplyr::n_distinct(plot_data$formulation)
 
   if (is.null(width)) {
     width <- max(10, 5 + n_pressures * 2 + n_formulations * 0.5)
@@ -535,37 +588,39 @@ plot_w1_bars <- function(
     height <- max(8, 3 + n_devices * 2.5)
   }
 
-  p <- ggplot(plot_data, aes(x = formulation, y = .data[[metric]])) +
-    geom_col(fill = "#1F78B4", color = "black", linewidth = 0.3) +
-    facet_grid(device_resistance ~ pressure_drop,
-               labeller = labeller(
-                 device_resistance = device_labels,
-                 pressure_drop = pressure_labels
-               )) +
-    labs(
+  p <- ggplot2::ggplot(plot_data, ggplot2::aes(x = formulation, y = .data[[metric]])) +
+    ggplot2::geom_col(fill = "#1F78B4", color = "black", linewidth = 0.3) +
+    ggplot2::facet_grid(
+      device_resistance ~ pressure_drop,
+      labeller = ggplot2::labeller(
+        device_resistance = device_labels,
+        pressure_drop     = pressure_labels
+      )
+    ) +
+    ggplot2::labs(
       x = "Formulation",
       y = y_label,
       title = "Dispersibility Ranking by Device Resistance × Pressure Drop",
-      subtitle = sprintf("Lower W₁ = Better dispersibility (%d×%d conditions)",
-                        n_devices, n_pressures)
+      subtitle = sprintf(
+        "Lower W₁ = Better dispersibility (%d×%d conditions)",
+        n_devices, n_pressures
+      )
     ) +
-    theme_classic(base_size = 12) +
-    theme(
-      axis.text.x = element_text(angle = 45, hjust = 1, face = "bold", size = 9),
-      axis.title = element_text(face = "bold"),
-      panel.grid.major.y = element_line(color = "grey90", linewidth = 0.3),
-      plot.title = element_text(face = "bold", size = 16),
-      plot.subtitle = element_text(size = 11),
-      strip.background = element_rect(fill = "grey90", color = "black"),
-      strip.text = element_text(face = "bold", size = 10)
+    ggplot2::theme_classic(base_size = 12) +
+    ggplot2::theme(
+      axis.text.x = ggplot2::element_text(angle = 45, hjust = 1, face = "bold", size = 9),
+      axis.title  = ggplot2::element_text(face = "bold"),
+      panel.grid.major.y = ggplot2::element_line(color = "grey90", linewidth = 0.3),
+      plot.title    = ggplot2::element_text(face = "bold", size = 16),
+      plot.subtitle = ggplot2::element_text(size = 11),
+      strip.background = ggplot2::element_rect(fill = "grey90", color = "black"),
+      strip.text       = ggplot2::element_text(face = "bold", size = 10)
     )
 
-  if (save_plot) {
-    if (!dir.exists(output_dir)) {
-      dir.create(output_dir, recursive = TRUE)
-    }
+  if (isTRUE(save_plot)) {
+    if (!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
     output_path <- file.path(output_dir, filename)
-    ggsave(output_path, p, width = width, height = height, dpi = dpi)
+    ggplot2::ggsave(output_path, p, width = width, height = height, dpi = dpi)
     cat(sprintf("✓ Saved: %s (%d×%d grid)\n", output_path, n_devices, n_pressures))
   }
 
