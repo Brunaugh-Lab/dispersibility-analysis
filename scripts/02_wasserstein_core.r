@@ -58,38 +58,33 @@
 #'   - q3_cdf_sd: Standard deviation across replicates
 #'   - n_replicates: Number of replicates pooled
 #'
-pool_replicate_cdfs <- function(data, formulation, module, device_resistance = NULL, pressure_drop = NULL) {
+pool_replicate_cdfs <- function(data, formulation_value, module_value, device_resistance = NULL, pressure_drop = NULL) {
 
-  # Start with base filter
-  pooled_cdf <- data %>%
+  pooled_cdf <- data |>
     dplyr::filter(
-      formulation == !!formulation,
-      module == !!module
+      formulation == formulation_value,
+      module == module_value
     )
 
-  # Add device/pressure filters ONLY for INHALER data
   if (!is.null(device_resistance)) {
-    pooled_cdf <- pooled_cdf %>%
-      dplyr::filter(device_resistance == !!device_resistance)
+    pooled_cdf <- pooled_cdf |>
+      dplyr::filter(device_resistance == device_resistance)
   }
 
   if (!is.null(pressure_drop)) {
-    pooled_cdf <- pooled_cdf %>%
-      dplyr::filter(pressure_drop_clean == !!pressure_drop)
+    pooled_cdf <- pooled_cdf |>
+      dplyr::filter(pressure_drop_clean == pressure_drop)
   }
 
-  # Pool replicates
-  pooled_cdf <- pooled_cdf %>%
-    dplyr::group_by(particle_size_um) %>%
+  pooled_cdf |>
+    dplyr::group_by(particle_size_um) |>
     dplyr::summarise(
-      q3_cdf_mean = mean(q3_cdf, na.rm = TRUE),
-      q3_cdf_sd = stats::sd(q3_cdf, na.rm = TRUE),
+      q3_cdf_mean  = mean(q3_cdf, na.rm = TRUE),
+      q3_cdf_sd    = stats::sd(q3_cdf, na.rm = TRUE),
       n_replicates = dplyr::n(),
       .groups = "drop"
-    ) %>%
+    ) |>
     dplyr::arrange(particle_size_um)
-
-  return(pooled_cdf)
 }
 
 
@@ -241,7 +236,7 @@ calculate_pairwise_wasserstein <- function(
     }
 
     # Pool replicates for reference condition (ONCE per formulation)
-    ref_pooled <- pool_replicate_cdfs(data, form, reference_module)
+    ref_pooled  <- pool_replicate_cdfs(data, form, reference_module)
 
     # Check that we have reference data
     if (nrow(ref_pooled) == 0) {
@@ -253,8 +248,8 @@ calculate_pairwise_wasserstein <- function(
     }
 
     # Get all device-pressure combinations for this formulation
-    device_pressure_combos <- data %>%
-      dplyr::filter(formulation == !!form, module == !!test_module) %>%
+    device_pressure_combos <- data |>
+      dplyr::filter(formulation == form, module == test_module) |>
       dplyr::distinct(device_resistance, pressure_drop_clean)
 
     if (nrow(device_pressure_combos) == 0) {
@@ -323,7 +318,7 @@ calculate_pairwise_wasserstein <- function(
     stop("No successful W1 calculations. Check your data.")
   }
 
-  results <- dplyr::bind_rows(results_list) %>%
+  results <- dplyr::bind_rows(results_list) |>
     dplyr::arrange(formulation)
 
   if (verbose) {
@@ -429,7 +424,7 @@ validate_wasserstein_results <- function(w1_results, max_w1_normalized = 2.0) {
   all_valid <- TRUE
 
   # Check for NA values
-  na_counts <- w1_results %>%
+  na_counts <- w1_results |>
     dplyr::summarise(dplyr::across(dplyr::everything(), ~sum(is.na(.))))
 
   if (any(na_counts > 0)) {
@@ -449,7 +444,7 @@ validate_wasserstein_results <- function(w1_results, max_w1_normalized = 2.0) {
   }
 
   # Check for unreasonably large W1/d50
-  large_w1 <- w1_results %>%
+  large_w1 <- w1_results |>
     dplyr::filter(W1_normalized > max_w1_normalized)
 
   if (nrow(large_w1) > 0) {
@@ -462,7 +457,7 @@ validate_wasserstein_results <- function(w1_results, max_w1_normalized = 2.0) {
   }
 
   # Check for negative d50 shifts (test finer than reference - unusual)
-  negative_shifts <- w1_results %>%
+  negative_shifts <- w1_results |>
     dplyr::filter(d50_shift_um < 0)
 
   if (nrow(negative_shifts) > 0) {
