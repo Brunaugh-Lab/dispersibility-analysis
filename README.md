@@ -2,7 +2,7 @@
 
 A reproducible R-based toolkit for quantifying dry powder inhaler dispersibility using the Wasserstein distance metric.
 
-## 📋 What This Does
+## What This Does
 
 This toolkit calculates **dispersibility metrics** for dry powder inhalers by:
 1. Importing Sympatec PAQXOS laser diffraction exports with automatic header detection
@@ -11,9 +11,6 @@ This toolkit calculates **dispersibility metrics** for dry powder inhalers by:
 4. Generating publication-ready visualizations of cumulative distribution functions and dispersibility rankings
 
 **Physical interpretation:** Lower W₁ = better dispersibility (closer to fully dispersed state)
-
-**Note on publication figures:**
-Figures appearing in associated manuscripts were generated using study-specific visualization scripts tailored to the experimental design. The public toolkit provides generalized plotting functions that reproduce the same underlying data processing, replicate pooling, and Wasserstein-1 (W₁) calculations, but may differ in presentation details (e.g., faceting, ordering, or aesthetics).
 
 **Pipeline workflow:**
 - **Script 01** (`01_data_import.R`): Reads raw PAQXOS CSVs → Saves `data/tidy/standardized_data_with_conditions.csv`
@@ -49,7 +46,7 @@ generate_all_plots(data, w1_results)                 # Auto-plots → figures/
 
 ---
 
-## 🗂️ Required Folder Structure
+## Required Folder Structure
 
 **Flexible structure** - The pipeline works with any organization as long as:
 1. CSV files are somewhere under `data/`
@@ -119,7 +116,7 @@ data/
 
 ---
 
-## 🚀 Quick Start Guide
+## Quick Start Guide
 
 ### Step 1: Install Required R Packages
 
@@ -317,7 +314,7 @@ figures/
 
 ---
 
-## 🔧 Advanced Usage
+## Advanced Usage
 
 ### Custom Formulation ID Extraction
 
@@ -392,7 +389,7 @@ generate_all_plots(
 
 ---
 
-## 🔍 Understanding the Output
+## Understanding the Output
 
 ### Standardized Data CSV
 **Location:** `data/tidy/standardized_data_with_conditions.csv`
@@ -434,7 +431,7 @@ generate_all_plots(
 
 ---
 
-## 🐛 Troubleshooting
+## Troubleshooting
 
 ### Import Issues
 
@@ -504,7 +501,7 @@ pool_replicate_cdfs(
 
 ---
 
-## 📊 Statistical Analysis
+## Statistical Analysis
 
 Once you have W1 results, you can use them for design-of-experiments analysis:
 
@@ -525,62 +522,7 @@ model <- MixtureLM(W1_micrometers ~ x1 + x2 + x3,
 
 ---
 
-## 📚 Citation
-
-If you use this toolkit in your research, please cite:
-
-**Dispersibility methodology:**
-Xia G, Dechayont B, Che L, Comfort I, Brunaugh AD. "A Distribution-Based Metric for Quantifying Dispersibility in Dry Powder Inhalers." *Pharmaceutics* (submitted 2025).
-
-**Application example:**
-Xia G, Bennett N, Watts A, Brunaugh AD. "Mapping a Ternary Carbohydrate Design Space for Stable and Dispersible Protein Dry Powders." *Molecular Pharmaceutics* (submitted 2025).
-
----
-
-## 🤝 Contributing
-
-Found a bug or have a suggestion? Please open an issue on GitHub!
-
-Potential improvements we're considering:
-- [ ] Parallel processing for large datasets
-- [ ] Interactive Shiny dashboard for real-time visualization
-- [ ] Support for additional disperser types beyond RODOS/INHALER
-- [ ] Automated report generation (R Markdown templates)
-
----
-
-## 📝 License
-
-MIT License - Free to use for academic and commercial purposes
-
----
-
-## 👥 Authors
-
-- **Grace Xia** - Method development, data analysis, and software implementation
-- **Ashlee D. Brunaugh** - Principal investigator, project design, and scientific oversight
-
-University of Michigan, College of Pharmacy, Department of Pharmaceutical Sciences
-
----
-
-## 📧 Contact
-
-Questions or feedback? Email: brunaugh@umich.edu
-
----
-
-## 🎓 Acknowledgments
-
-This work was supported by [add funding information].
-
-Special thanks to the pharmaceutical sciences community for valuable feedback during method development.
-
----
-
-## 📖 Additional Documentation
-
-### Key Methodological Notes
+## Key Methodological Notes
 
 **Replicate Pooling:**
 The toolkit follows best practices by pooling technical replicates before calculating Wasserstein distances. This means:
@@ -600,7 +542,12 @@ The toolkit follows best practices by pooling technical replicates before calcul
 - Data quality checks happen at every step
 - Clear messages help diagnose issues quickly
 
-### Computational Performance
+**Reproducibility and visualization scope:**
+This repository provides transparent, reusable implementations of the dispersibility metric and core analysis workflow. Visualization functions prioritize sensible defaults across diverse experimental designs. Manuscript figures may differ in presentation details (faceting, ordering, aesthetics) but use identical underlying calculations.
+
+---
+
+## Computational Performance
 
 **Typical runtime (90 files, 3 formulations):**
 - Script 01 (import): ~5-10 seconds
@@ -617,16 +564,40 @@ The toolkit follows best practices by pooling technical replicates before calcul
 - Visualization time scales with number of conditions
 - Consider subset analysis for very large datasets (>1000 files)
 
-### Reproducibility and Scope
-
-This repository is intended to provide a transparent, reusable implementation of the dispersibility metric and core analysis workflow. Visualization functions prioritize sensible defaults across diverse experimental designs rather than exact replication of manuscript figures.
+---
 
 ## Citation
 
-If you use this toolkit in academic work, please cite:
+If you use this toolkit in your research, please cite:
 
-Brunaugh A. et al. (2025).
-*A distribution-based metric for quantifying dispersibility in dry powder inhalers.*
-Pharmaceutics.
+**Dispersibility methodology:**
+Xia G, Dechayont B, Che L, Comfort I, Brunaugh AD. "A Distribution-Based Metric for Quantifying Dispersibility in Dry Powder Inhalers." *Pharmaceutics* (submitted 2025).
 
-A DOI-linked software archive corresponding to the published version is available via Zenodo.
+**Application example:**
+Xia G, Bennett N, Watts A, Brunaugh AD. "Mapping a Ternary Carbohydrate Design Space for Stable and Dispersible Protein Dry Powders." *Molecular Pharmaceutics* (submitted 2025).
+
+A DOI-linked software archive will be available via Zenodo upon publication.
+
+---
+
+## License
+
+MIT License - Free to use for academic and commercial purposes.
+
+---
+
+## Authors
+
+- **Grace Xia** - Method development, data analysis, and software implementation
+- **Ashlee D. Brunaugh** - Principal investigator, project design, and scientific oversight
+
+University of Michigan, College of Pharmacy, Department of Pharmaceutical Sciences
+
+---
+
+## Contact
+
+Questions or feedback? Email: brunaugh@umich.edu
+
+---
+
