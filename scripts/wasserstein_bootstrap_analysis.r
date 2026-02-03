@@ -29,8 +29,6 @@
 #   4. Estimate sampling distribution parameters (mean, SD, 95% CI)
 #   5. Compare bootstrap variability to between-condition effects
 #
-# Usage:
-#   source("scripts/wasserstein_bootstrap_analysis.R")
 #
 # ==============================================================================
 library(tidyverse)
@@ -1031,47 +1029,4 @@ run_bootstrap_analysis <- function(data_file = NULL, n_bootstrap = 2000,
 }
 
 
-# ==============================================================================
-# AUTO-EXECUTION: Run analysis when script is sourced
-# ==============================================================================
 
-# Check if processed data exists
-if (file.exists("data/tidy/standardized_data_with_conditions.csv")) {
-
-  cat("\n========================================================================\n")
-  cat("AUTO-RUNNING BOOTSTRAP ANALYSIS\n")
-  cat("========================================================================\n")
-  cat("Reading: data/tidy/standardized_data_with_conditions.csv\n")
-  cat("Bootstrap iterations: 2000 per formulation\n")
-  cat("Saving to: results/bootstrap_results.csv\n")
-  cat("------------------------------------------------------------------------\n")
-
-  # Run the complete analysis
-  .bootstrap_analysis <- run_bootstrap_analysis(verbose = TRUE)
-
-  cat("\n========================================================================\n")
-  cat("BOOTSTRAP ANALYSIS COMPLETE\n")
-  cat("========================================================================\n")
-  cat("Next steps:\n")
-  cat("  - Review confidence intervals in results/bootstrap_results.csv\n")
-  cat("  - Check diagnostic plots in figures/bootstrap_analysis.pdf\n")
-  cat("  - Compare effect-to-noise ratios in results/effect_noise_ratios.csv\n")
-  cat("  - Examine device condition effects in figures/effect_noise_analysis.pdf\n")
-  cat("------------------------------------------------------------------------\n")
-  cat("To reload results later:\n")
-  cat("  source('scripts/04_bootstrap_analysis.R')\n")
-  cat("  bootstrap_results <- read_csv('results/bootstrap_results.csv')\n")
-  cat("  effect_noise_ratios <- read_csv('results/effect_noise_ratios.csv')\n")
-  cat("========================================================================\n\n")
-
-} else {
-  cat("\n========================================================================\n")
-  cat("BOOTSTRAP ANALYSIS - WAITING FOR INPUT DATA\n")
-  cat("========================================================================\n")
-  cat("Standardized data not found: data/tidy/standardized_data_with_conditions.csv\n")
-  cat("\nPlease run the data processing pipeline first:\n")
-  cat("  source('scripts/01_data_import.R')\n")
-  cat("  source('scripts/02_wasserstein_core.R')\n")
-  cat("  source('scripts/04_bootstrap_analysis.R')\n")
-  cat("========================================================================\n\n")
-}
