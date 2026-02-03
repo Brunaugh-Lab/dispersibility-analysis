@@ -2,38 +2,69 @@
 # 03_visualization.R
 # Visualization Functions for Dispersibility Analysis
 #
-# Purpose: Publication-ready plots for comparing particle size distributions
-#          and dispersibility metrics across formulations. Automatically loads
-#          data and generates figures.
+# PURPOSE
+#   Publication-ready plotting functions for comparing particle size
+#   distributions and dispersibility metrics across formulations.
+#   This script defines visualization utilities only and does NOT
+#   execute automatically when sourced.
 #
-# Auto-execution: Script automatically runs when sourced
-#   - Reads data/tidy/standardized_data_with_conditions.csv (from script 01)
-#   - Reads results/wasserstein_results.csv (from script 02)
-#   - Generates figures and saves to figures/
+# ------------------------------------------------------------------
+# HOW TO USE (MANUAL EXECUTION)
+#
+#   source("scripts/03_visualization.R")
+#
+#   data <- readr::read_csv(
+#     file.path(data_dir, "tidy", "standardized_data_with_conditions.csv"),
+#     show_col_types = FALSE
+#   )
+#
+#   w1_results <- readr::read_csv(
+#     file.path(results_dir, "wasserstein_results.csv"),
+#     show_col_types = FALSE
+#   )
+#
+#   generate_all_plots(
+#     data = data,
+#     w1_results = w1_results,
+#     output_dir = figures_dir
+#   )
+#
+# ------------------------------------------------------------------
+# INPUTS (from upstream pipeline)
+#   - data/tidy/standardized_data_with_conditions.csv   (script 01)
+#   - results/wasserstein_results.csv                   (script 02)
+#
+# OUTPUTS
+#   - figures/*.pdf and figures/*.png
+#
+#   Examples:
 #     * One PDF per formulation (RODOS vs INHALER comparison)
 #     * One overlay PDF (all INHALER distributions)
-#     * One PDF (W1 ranking bars)
+#     * W₁ ranking and factor-faceted bar plots
 #
-# Additional plots available as functions (call manually if needed):
-#   - plot_d50_comparison() - Median particle size comparison
-#   - create_publication_panel() - Combined multi-panel figure
-#   - plot_psd_density() - Density distributions
+# ------------------------------------------------------------------
+# AVAILABLE PLOTTING FUNCTIONS
 #
-# - **NEW**: 4 factor-faceted plotting functions for simplified comparisons
-# - Creates publication-ready PDFs with dynamic sizing
-# - Auto-detects experimental design (devices × pressures × formulations)
+#   - plot_individual_formulation_pdfs()
+#   - plot_all_inhaler_overlay()
+#   - plot_psd_density()
+#   - plot_w1_bars()
+#   - plot_d50_comparison()
+#   - create_publication_panel()
 #
-# **New Plot Types:**
-# - `CDF_by_device.pdf` - All formulations compared across device resistance levels
-# - `CDF_by_pressure.pdf` - All formulations compared across pressure drop levels
-# - `W1_by_device.pdf` - Dispersibility metrics faceted by device resistance
-# - `W1_by_pressure.pdf` - Dispersibility metrics faceted by pressure drop
+#   Factor-faceted plots:
+#     - plot_cdf_by_device()
+#     - plot_cdf_by_pressure()
+#     - plot_w1_by_device()
+#     - plot_w1_by_pressure()
 #
-# **Features:**
-# - Flexible design: Works with any n×m experimental design
-# - Smart sorting: Natural ordering of factors (low→med→high, numeric pressures)
-# - Dynamic sizing: Plot dimensions scale automatically
-# - Publication formatting: Consistent themes, proper axis labels
+# ------------------------------------------------------------------
+# DESIGN FEATURES
+#   - Flexible: supports arbitrary n × m experimental designs
+#   - Smart factor ordering: low → medium → high; numeric pressures
+#   - Dynamic sizing: figure dimensions scale with design complexity
+#   - Publication formatting: consistent themes, labels, and scales
+#
 # ==============================================================================
 
 library(tidyverse)
@@ -1262,78 +1293,4 @@ generate_all_plots <- function(
     w1_device = p_w1_device,
     w1_pressure = p_w1_pressure
   )))
-}
-
-# ==============================================================================
-# AUTO-EXECUTION: Generate plots when script is sourced
-# ==============================================================================
-tidy_data_exists <- file.exists(tidy_data_path)
-results_exist <- file.exists(w1_results_path)
-
-if (tidy_data_exists && results_exist) {
-
-  cat("\n========================================================================\n")
-  cat("AUTO-RUNNING VISUALIZATION\n")
-  cat("========================================================================\n")
-  cat("Reading: ", tidy_data_path, "\n", sep = "")
-  cat("Reading: ", w1_results_path, "\n", sep = "")
-  cat("Saving to: ", figures_dir, "/\n", sep = "")
-  cat("------------------------------------------------------------------------\n")
-
-  .viz_data <- readr::read_csv(tidy_data_path, show_col_types = FALSE)
-  .viz_results <- readr::read_csv(w1_results_path, show_col_types = FALSE)
-
-  .viz_plots <- generate_all_plots(
-    data = .viz_data,
-    w1_results = .viz_results,
-    output_dir = figures_dir,
-    verbose = TRUE
-  )
-
-  cat("\n========================================================================\n")
-  cat("VISUALIZATION COMPLETE\n")
-  cat("========================================================================\n")
-  cat("Generated files:\n")
-  n_formulations <- n_distinct(.viz_data$formulation)
-  n_devices <- n_distinct(.viz_data$device_resistance)
-  n_pressures <- n_distinct(.viz_data$pressure_drop_clean)
-  cat(sprintf("  - %s/*_comparison_faceted.pdf (%d formulations, %d×%d grids)\n",
-              figures_dir, n_formulations, n_devices, n_pressures))
-  cat(sprintf("  - %s/all_inhaler_overlay.pdf (%d×%d facets)\n", figures_dir, n_devices, n_pressures))
-  cat(sprintf("  - %s/w1_ranking.pdf (%d×%d facets)\n", figures_dir, n_devices, n_pressures))
-  cat("\n  NEW Factor-Faceted Plots:\n")
-  cat(sprintf("  - %s/CDF_by_device.pdf (%d device panels)\n", figures_dir, n_devices))
-  cat(sprintf("  - %s/CDF_by_pressure.pdf (%d pressure panels)\n", figures_dir, n_pressures))
-  cat(sprintf("  - %s/W1_by_device.pdf (%d device panels)\n", figures_dir, n_devices))
-  cat(sprintf("  - %s/W1_by_pressure.pdf (%d pressure panels)\n", figures_dir, n_pressures))
-  cat("------------------------------------------------------------------------\n")
-  cat("Additional plots available via functions:\n")
-  cat("  - plot_d50_comparison() for median size comparison\n")
-  cat("  - create_publication_panel() for combined figures\n")
-  cat("  - plot_cdf_by_device() for device-specific CDF comparison\n")
-  cat("  - plot_cdf_by_pressure() for pressure-specific CDF comparison\n")
-  cat("  - plot_w1_by_device() for device-specific W1 comparison\n")
-  cat("  - plot_w1_by_pressure() for pressure-specific W1 comparison\n")
-  cat("========================================================================\n\n")
-
-} else {
-  cat("\n========================================================================\n")
-  cat("VISUALIZATION - WAITING FOR INPUT DATA\n")
-  cat("========================================================================\n")
-
-  if (!tidy_data_exists) {
-    cat("✗ Tidy data not found: ", tidy_data_path, "\n", sep = "")
-    cat("  Run: source('scripts/01_data_import.R')\n\n")
-  }
-
-  if (!results_exist) {
-    cat("✗ Results not found: ", w1_results_path, "\n", sep = "")
-    cat("  Run: source('scripts/02_wasserstein_core.R')\n\n")
-  }
-
-  cat("Complete pipeline:\n")
-  cat("  source('scripts/01_data_import.R')\n")
-  cat("  source('scripts/02_wasserstein_core.R')\n")
-  cat("  source('scripts/03_visualization.R')\n")
-  cat("========================================================================\n\n")
 }
