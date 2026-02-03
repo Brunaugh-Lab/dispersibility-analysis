@@ -60,7 +60,12 @@
 #'
 pool_replicate_cdfs <- function(data, formulation_value, module_value,
                                 device_resistance_value = NULL,
-                                pressure_drop_value = NULL) {
+                                pressure_drop_value = NULL,
+                                replicate_col = "replicate") {
+
+  if (!replicate_col %in% names(data)) {
+    stop("Expected replicate column '", replicate_col, "' not found in data.", call. = FALSE)
+  }
 
   pooled_cdf <- data |>
     dplyr::filter(
@@ -78,12 +83,21 @@ pool_replicate_cdfs <- function(data, formulation_value, module_value,
       dplyr::filter(pressure_drop_clean == pressure_drop_value)
   }
 
+  # 1) ensure one value per (replicate, particle_size)
+  pooled_cdf <- pooled_cdf |>
+    dplyr::group_by(particle_size_um, .data[[replicate_col]]) |>
+    dplyr::summarise(
+      q3_cdf_rep = mean(q3_cdf, na.rm = TRUE),
+      .groups = "drop"
+    )
+
+  # 2) pool across replicates at each particle size
   pooled_cdf |>
     dplyr::group_by(particle_size_um) |>
     dplyr::summarise(
-      q3_cdf_mean  = mean(q3_cdf, na.rm = TRUE),
-      q3_cdf_sd    = stats::sd(q3_cdf, na.rm = TRUE),
-      n_replicates = dplyr::n(),
+      q3_cdf_mean  = mean(q3_cdf_rep, na.rm = TRUE),
+      q3_cdf_sd    = stats::sd(q3_cdf_rep, na.rm = TRUE),
+      n_replicates = dplyr::n(),  # now this truly equals number of replicates contributing
       .groups = "drop"
     ) |>
     dplyr::arrange(particle_size_um)
