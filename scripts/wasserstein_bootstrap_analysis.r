@@ -15,12 +15,12 @@
 #   - Performs bootstrap resampling (default: 2000 iterations)
 #   - Calculates 95% CIs and standard errors for each formulation
 #   - Computes effect-to-noise ratios for device resistance/pressure effects
-#   - Saves to results_v2/bootstrap_results.csv and results_v2/effect_noise_ratios.csv
+#   - Saves to results/bootstrap_results.csv and results/effect_noise_ratios.csv
 #
-# Input: data_v2/tidy/standardized_data.csv (from 01_data_import.R)
+# Input: data/tidy/standardized_data.csv (from 01_data_import.R)
 # Output:
-#   - results_v2/bootstrap_results.csv (W1 distributions with CIs)
-#   - results_v2/effect_noise_ratios.csv (signal vs noise quantification)
+#   - results/bootstrap_results.csv (W1 distributions with CIs)
+#   - results/effect_noise_ratios.csv (signal vs noise quantification)
 #
 # Methodology:
 #   1. Pool replicates → create empirical particle size distributions
@@ -304,7 +304,7 @@ bootstrap_w1_single <- function(data, formulation, reference_module = "RODOS",
 #'
 bootstrap_w1_analysis <- function(data, reference_module = "RODOS",
                                  test_module = "INHALER", n_bootstrap = 2000,
-                                 output_dir = "results_v2", save_output = TRUE,
+                                 output_dir = "results", save_output = TRUE,
                                  output_filename = "bootstrap_results.csv",
                                  seed = 42, verbose = TRUE) {
 
@@ -414,7 +414,7 @@ bootstrap_w1_analysis <- function(data, reference_module = "RODOS",
 #' @return Tibble with effect-to-noise ratio
 #'
 calculate_effect_noise_ratios <- function(bootstrap_results,
-                                         output_dir = "results_v2",
+                                         output_dir = "results",
                                          save_output = TRUE,
                                          output_filename = "effect_noise_ratios.csv",
                                          verbose = TRUE) {
@@ -578,7 +578,7 @@ calculate_effect_noise_ratios <- function(bootstrap_results,
 #'
 #' @return List of ggplot objects
 #'
-plot_bootstrap_results <- function(bootstrap_results, output_dir = "figures_v2",
+plot_bootstrap_results <- function(bootstrap_results, output_dir = "figures",
                                   save_plots = TRUE, verbose = TRUE) {
 
   library(ggplot2)
@@ -767,7 +767,7 @@ plot_bootstrap_results <- function(bootstrap_results, output_dir = "figures_v2",
 #' @return List of ggplot objects
 #'
 plot_effect_noise_analysis <- function(bootstrap_results, effect_noise_results,
-                                      output_dir = "figures_v2", save_plots = TRUE,
+                                      output_dir = "figures", save_plots = TRUE,
                                       verbose = TRUE) {
 
   library(ggplot2)
@@ -951,7 +951,7 @@ run_bootstrap_analysis <- function(data_file = NULL, n_bootstrap = 2000,
 
   # Load data
   if (is.null(data_file)) {
-    data_file <- "data_v2/tidy/standardized_data_with_conditions.csv"
+    data_file <- "data/tidy/standardized_data_with_conditions.csv"
   }
 
   if (!file.exists(data_file)) {
@@ -999,10 +999,10 @@ run_bootstrap_analysis <- function(data_file = NULL, n_bootstrap = 2000,
     cat("BOOTSTRAP ANALYSIS COMPLETE\n")
     cat("========================================================================\n")
     cat("Files created:\n")
-    cat("  - results_v2/bootstrap_results.csv\n")
-    cat("  - results_v2/effect_noise_ratios.csv\n")
-    cat("  - figures_v2/bootstrap_analysis.pdf\n")
-    cat("  - figures_v2/effect_noise_analysis.pdf\n")
+    cat("  - results/bootstrap_results.csv\n")
+    cat("  - results/effect_noise_ratios.csv\n")
+    cat("  - figures/bootstrap_analysis.pdf\n")
+    cat("  - figures/effect_noise_analysis.pdf\n")
     cat("------------------------------------------------------------------------\n")
     cat("Bootstrap summary:\n")
     cat(sprintf("  %d formulations analyzed\n", nrow(bootstrap_results)))
@@ -1036,14 +1036,14 @@ run_bootstrap_analysis <- function(data_file = NULL, n_bootstrap = 2000,
 # ==============================================================================
 
 # Check if processed data exists
-if (file.exists("data_v2/tidy/standardized_data_with_conditions.csv")) {
+if (file.exists("data/tidy/standardized_data_with_conditions.csv")) {
 
   cat("\n========================================================================\n")
   cat("AUTO-RUNNING BOOTSTRAP ANALYSIS\n")
   cat("========================================================================\n")
-  cat("Reading: data_v2/tidy/standardized_data_with_conditions.csv\n")
+  cat("Reading: data/tidy/standardized_data_with_conditions.csv\n")
   cat("Bootstrap iterations: 2000 per formulation\n")
-  cat("Saving to: results_v2/bootstrap_results.csv\n")
+  cat("Saving to: results/bootstrap_results.csv\n")
   cat("------------------------------------------------------------------------\n")
 
   # Run the complete analysis
@@ -1068,7 +1068,7 @@ if (file.exists("data_v2/tidy/standardized_data_with_conditions.csv")) {
   cat("\n========================================================================\n")
   cat("BOOTSTRAP ANALYSIS - WAITING FOR INPUT DATA\n")
   cat("========================================================================\n")
-  cat("Standardized data not found: data_v2/tidy/standardized_data_with_conditions.csv\n")
+  cat("Standardized data not found: data/tidy/standardized_data_with_conditions.csv\n")
   cat("\nPlease run the data processing pipeline first:\n")
   cat("  source('scripts/01_data_import.R')\n")
   cat("  source('scripts/02_wasserstein_core.R')\n")
