@@ -15,21 +15,11 @@
 #
 #   source("scripts/03_visualization.R")
 #
-#   data <- readr::read_csv(
-#     file.path(data_dir, "tidy", "standardized_data_with_conditions.csv"),
-#     show_col_types = FALSE
-#   )
+#   data <- readr::read_csv(file.path(data_dir, "tidy", "standardized_data_with_conditions.csv"), show_col_types = FALSE)
 #
-#   w1_results <- readr::read_csv(
-#     file.path(results_dir, "wasserstein_results.csv"),
-#     show_col_types = FALSE
-#   )
+#   w1_results <- readr::read_csv(file.path(results_dir, "wasserstein_results.csv"),show_col_types = FALSE)
 #
-#   generate_all_plots(
-#     data = data,
-#     w1_results = w1_results,
-#     output_dir = figures_dir
-#   )
+#   generate_all_plots(data = data, w1_results = w1_results, output_dir = figures_dir)
 #
 # ------------------------------------------------------------------
 # INPUTS (from upstream pipeline)
@@ -41,14 +31,14 @@
 #
 #   Examples:
 #     * One PDF per formulation showing pooled reference (RODOS) vs
-#       all available INHALER test conditions
-#     * Per-formulation reference vs single-condition comparison PDFs
-#     * W₁ ranking and factor-faceted bar plots
+#       all available test conditions (e.g., INHALER device × pressure)
+#     * One PDF per formulation × test condition (pairwise reference vs test)
+#     * W₁ dispersibility ranking plot
 #
 # ------------------------------------------------------------------
 # AVAILABLE PLOTTING FUNCTIONS
 #
-#   Core CDF plots:
+#   Core CDF exporters (publication-facing):
 #     - plot_reference_vs_test()
 #     - export_pairwise_condition_pdfs()
 #     - export_formulation_overlay_reference_plus_all_tests()
@@ -56,18 +46,17 @@
 #   Summary / metric plots:
 #     - plot_w1_bars()
 #
-#   Factor-faceted plots:
-#     - plot_cdf_by_device()
-#     - plot_cdf_by_pressure()
-#     - plot_w1_by_device()
-#     - plot_w1_by_pressure()
+#   (Optional / internal QC utilities may be added separately, but are
+#    not part of the default plotting workflow.)
 #
 # ------------------------------------------------------------------
 # DESIGN PRINCIPLES
-#   - Consistent with W1 methodology: replicates are pooled before plotting
-#   - Explicit reference vs test comparisons (no implicit overlays)
-#   - Modular functions with no side effects on source()
-#   - Publication-oriented defaults with defensive input checks
+#   - Methodological consistency with W₁ calculations:
+#       replicates are pooled before visualization
+#   - Explicit reference vs test comparisons (no ambiguous global overlays)
+#   - Exporter-based workflow: figures are written to disk by default
+#   - Modular, side-effect-free functions (no execution on source())
+#   - Publication-oriented defaults with defensive input validation
 #
 # ==============================================================================
 
