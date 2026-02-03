@@ -34,18 +34,18 @@
 #     * W₁ dispersibility ranking plot
 #
 # ------------------------------------------------------------------
-# AVAILABLE PLOTTING FUNCTIONS
+# AVAILABLE FUNCTIONS
 #
-#   Core CDF exporters (publication-facing):
+#   Plotters (return ggplot objects):
 #     - plot_reference_vs_test()
+#     - plot_w1_bars()
+#
+#   Exporters (write figures to disk):
 #     - export_pairwise_condition_pdfs()
 #     - export_formulation_overlay_reference_plus_all_tests()
 #
-#   Summary / metric plots:
-#     - plot_w1_bars()
-#
-#   (Optional / internal QC utilities may be added separately, but are
-#    not part of the default plotting workflow.)
+#   Workflow / orchestration:
+#     - generate_all_plots()
 #
 # ------------------------------------------------------------------
 # DESIGN PRINCIPLES
@@ -89,7 +89,7 @@ tidy_data_path  <- file.path(data_dir, "tidy", "standardized_data_with_condition
 w1_results_path <- file.path(results_dir, "wasserstein_results.csv")
 
 # ==============================================================================
-# CORE PLOTTER: Reference vs Single Test Condition (returns ggplot object)
+# PLOTTER: Reference vs Single Test Condition (returns ggplot object)
 # ==============================================================================
 
 plot_reference_vs_test <- function(
@@ -482,7 +482,7 @@ export_formulation_overlay_reference_plus_all_tests <- function(
 }
 
 # ==============================================================================
-# FUNCTION: Plot Wasserstein Distance Bars (auto-adapts to dataset shape)
+# PLOTTER 2: Wasserstein Distance Bars (auto-adapts to dataset shape)
 #   Goal: produce a sensible default regardless of whether the user has
 #   (a) many formulations, (b) one formulation, (c) one/both condition axes.
 # ==============================================================================
@@ -763,7 +763,7 @@ plot_w1_bars <- function(
 }
 
 # ==============================================================================
-# CONVENIENCE FUNCTION: Generate all standard plots
+# ORCHESTRATOR: Generate Standard Dispersibility Figures
 # ==============================================================================
 generate_all_plots <- function(
     data,
