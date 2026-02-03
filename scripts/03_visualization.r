@@ -13,21 +13,11 @@
 #
 #   source("scripts/03_visualization.R")
 #
-#   data <- readr::read_csv(
-#     file.path(data_dir, "tidy", "standardized_data_with_conditions.csv"),
-#     show_col_types = FALSE
-#   )
+#   data <- readr::read_csv(file.path(data_dir, "tidy", "standardized_data_with_conditions.csv"), show_col_types = FALSE)
 #
-#   w1_results <- readr::read_csv(
-#     file.path(results_dir, "wasserstein_results.csv"),
-#     show_col_types = FALSE
-#   )
+#   w1_results <- readr::read_csv(file.path(results_dir, "wasserstein_results.csv"), show_col_types = FALSE)
 #
-#   generate_all_plots(
-#     data = data,
-#     w1_results = w1_results,
-#     output_dir = figures_dir
-#   )
+#   generate_all_plots(data = data, w1_results = w1_results, output_dir = figures_dir)
 #
 # ------------------------------------------------------------------
 # INPUTS (from upstream pipeline)
