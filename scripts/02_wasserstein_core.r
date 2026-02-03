@@ -184,7 +184,6 @@ calculate_wasserstein_1d <- function(size_grid, cdf_test, cdf_ref) {
 #'   - W1_micrometers: Absolute W1 distance in µm
 #'   - d50_reference_um: Median particle size of reference (µm)
 #'   - d50_test_um: Median particle size of test (µm)
-#'   - W1_normalized: W1 divided by reference d50 (dimensionless)
 #'   - d50_shift_um: Test d50 minus reference d50 (µm)
 #'
 calculate_pairwise_wasserstein <- function(
@@ -344,7 +343,7 @@ calculate_pairwise_wasserstein <- function(
 
     if (verbose) {
       cat("✓ Results saved to:", output_path, "\n")
-      cat("  Use W1_micrometers for DoE modeling\n\n")
+      cat("  Key output: W1_micrometers (absolute W1 in µm)\n\n")
     }
   }
 
