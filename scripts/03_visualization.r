@@ -307,6 +307,8 @@ export_pairwise_condition_pdfs <- function(
 #   One PDF per formulation showing:
 #     - Reference (e.g., RODOS) pooled once per formulation
 #     - All test conditions (e.g., INHALER device×pressure) overlaid
+#   Pooling matches 02_wasserstein_core.R: average within replicate first,
+#   then average across replicates.
 # ==============================================================================
 
 export_formulation_overlay_reference_plus_all_tests <- function(
@@ -327,18 +329,33 @@ export_formulation_overlay_reference_plus_all_tests <- function(
     stop("Expected column 'replicate' not found in data.", call. = FALSE)
   }
 
+  # Defensive check: required columns exist
+  needed_cols <- c("formulation", "module", "particle_size_um", "q3_percent", "replicate", condition_cols)
+  missing_cols <- setdiff(needed_cols, names(data))
+  if (length(missing_cols) > 0) {
+    stop(
+      "Data is missing required columns: ",
+      paste(missing_cols, collapse = ", "),
+      call. = FALSE
+    )
+  }
+
   # Helper: replicate-first pooling for q3_percent
   pool_q3_percent <- function(df) {
     df |>
       dplyr::group_by(.data$particle_size_um, .data$replicate) |>
-      dplyr::summarise(q3_percent_rep = mean(.data$q3_percent, na.rm = TRUE), .groups = "drop") |>
+      dplyr::summarise(
+        q3_percent_rep = mean(.data$q3_percent, na.rm = TRUE),
+        .groups = "drop"
+      ) |>
       dplyr::group_by(.data$particle_size_um) |>
       dplyr::summarise(
         q3_percent_mean = mean(.data$q3_percent_rep, na.rm = TRUE),
         q3_percent_sd   = stats::sd(.data$q3_percent_rep, na.rm = TRUE),
         n_replicates    = dplyr::n(),
         .groups = "drop"
-      )
+      ) |>
+      dplyr::arrange(.data$particle_size_um)
   }
 
   formulations <- unique(data$formulation)
@@ -374,13 +391,12 @@ export_formulation_overlay_reference_plus_all_tests <- function(
       next
     }
 
-    # Build pooled test curves for each condition
+    # ---- build pooled test curves for each condition ----
     test_summaries <- vector("list", nrow(test_conditions))
 
     for (i in seq_len(nrow(test_conditions))) {
 
       cond <- test_conditions[i, , drop = FALSE]
-      cond_vals <- unlist(cond, use.names = FALSE)
 
       cond_subset <- test_df
       for (j in seq_along(condition_cols)) {
@@ -391,24 +407,41 @@ export_formulation_overlay_reference_plus_all_tests <- function(
 
       if (nrow(cond_subset) == 0) next
 
-      # label like: "high, 1" (or whatever your values are)
-      cond_label <- paste(cond_vals, collapse = ", ")
+      # Robust, unambiguous label (includes column names)
+      cond_label <- paste(
+        paste0(
+          condition_cols, "=",
+          vapply(condition_cols, \(cc) as.character(cond[[cc]][[1]]), character(1))
+        ),
+        collapse = " | "
+      )
 
       test_summaries[[i]] <- pool_q3_percent(cond_subset) |>
         dplyr::mutate(curve = cond_label)
     }
 
+    # Drop NULL entries defensively
+    test_summaries <- purrr::compact(test_summaries)
     test_summary_all <- dplyr::bind_rows(test_summaries)
 
     if (nrow(test_summary_all) == 0) next
 
-    # Combine reference + all test curves
-    plot_data <- dplyr::bind_rows(ref_summary, test_summary_all) |>
-      dplyr::mutate(
-        curve = factor(.data$curve, levels = c(reference_module, sort(unique(test_summary_all$curve))))
-      )
+    # ---- combine + deterministic factor levels ----
+    plot_data <- dplyr::bind_rows(ref_summary, test_summary_all)
 
-    # Plot: reference as fixed color, tests as a palette
+    test_levels  <- sort(unique(test_summary_all$curve))
+    curve_levels <- c(reference_module, test_levels)
+
+    plot_data <- plot_data |>
+      dplyr::mutate(curve = factor(.data$curve, levels = curve_levels))
+
+    # ---- deterministic colors: reference fixed + tests viridis (generated ONCE) ----
+    test_cols <- viridis::viridis(length(test_levels), option = "turbo")
+    names(test_cols) <- test_levels
+
+    curve_cols <- c(setNames("#E31A1C", reference_module), test_cols)
+
+    # ---- plot ----
     p <- ggplot2::ggplot(
       plot_data,
       ggplot2::aes(
@@ -433,28 +466,16 @@ export_formulation_overlay_reference_plus_all_tests <- function(
         labels = c("0.5", "1", "2", "5", "10", "20", "50", "100")
       ) +
       ggplot2::scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, 20)) +
-      # Manual color control: reference fixed + tests from viridis
-      ggplot2::scale_color_manual(
-        values = c(
-          setNames("#E31A1C", reference_module),
-          setNames(viridis::viridis(length(levels(plot_data$curve)) - 1, option = "turbo"),
-                   setdiff(levels(plot_data$curve), reference_module))
-        ),
-        name = NULL
-      ) +
-      ggplot2::scale_fill_manual(
-        values = c(
-          setNames("#E31A1C", reference_module),
-          setNames(viridis::viridis(length(levels(plot_data$curve)) - 1, option = "turbo"),
-                   setdiff(levels(plot_data$curve), reference_module))
-        ),
-        guide = "none"
-      ) +
+      ggplot2::scale_color_manual(values = curve_cols, name = NULL) +
+      ggplot2::scale_fill_manual(values = curve_cols, guide = "none") +
       ggplot2::labs(
         x = "Particle Size (µm)",
         y = expression("Cumulative Distribution " * Q[3] * " (%)"),
         title = paste0(form, ": ", reference_module, " reference vs all ", test_module, " conditions"),
-        subtitle = paste0("Overlay of ", nrow(test_conditions), " test conditions (", paste(condition_cols, collapse = " × "), ")")
+        subtitle = paste0(
+          "Overlay of ", nrow(test_conditions), " test conditions (",
+          paste(condition_cols, collapse = " × "), ")"
+        )
       ) +
       ggplot2::theme_classic(base_size = 12) +
       ggplot2::theme(
