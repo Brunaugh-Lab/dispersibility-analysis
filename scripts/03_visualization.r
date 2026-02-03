@@ -286,154 +286,175 @@ export_pairwise_condition_pdfs <- function(
   }
 }
 
-
 # ==============================================================================
-# FUNCTION 2: Plot All INHALER Distributions Overlay
+# FUNCTION 2: Per-formulation overlay
+#   One PDF per formulation showing:
+#     - Reference (e.g., RODOS) pooled once per formulation
+#     - All test conditions (e.g., INHALER device×pressure) overlaid
 # ==============================================================================
 
-plot_all_inhaler_overlay <- function(
-    data,
-    test_module = "INHALER",
-    formulations = NULL,
-    output_dir = figures_dir,
-    filename = "all_inhaler_overlay.pdf",
-    width = NULL,
-    height = NULL,
-    verbose = TRUE
+export_formulation_overlay_reference_plus_all_tests <- function(
+  data,
+  reference_module = "RODOS",
+  test_module = "INHALER",
+  condition_cols = c("device_resistance", "pressure_drop_clean"),
+  output_dir = figures_dir,
+  filename_suffix = "reference_plus_all_tests.pdf",
+  width = 10,
+  height = 7,
+  verbose = TRUE
 ) {
 
-  if (!dir.exists(output_dir)) {
-    dir.create(output_dir, recursive = TRUE)
+  if (!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
+
+  if (!"replicate" %in% names(data)) {
+    stop("Expected column 'replicate' not found in data.", call. = FALSE)
   }
 
-  if (!is.null(formulations)) {
-    data <- dplyr::filter(data, formulation %in% formulations)
+  # Helper: replicate-first pooling for q3_percent
+  pool_q3_percent <- function(df) {
+    df |>
+      dplyr::group_by(.data$particle_size_um, .data$replicate) |>
+      dplyr::summarise(q3_percent_rep = mean(.data$q3_percent, na.rm = TRUE), .groups = "drop") |>
+      dplyr::group_by(.data$particle_size_um) |>
+      dplyr::summarise(
+        q3_percent_mean = mean(.data$q3_percent_rep, na.rm = TRUE),
+        q3_percent_sd   = stats::sd(.data$q3_percent_rep, na.rm = TRUE),
+        n_replicates    = dplyr::n(),
+        .groups = "drop"
+      )
   }
 
-  plot_data <- dplyr::filter(data, module == test_module)
+  formulations <- unique(data$formulation)
 
-  summary_data <- plot_data |>
-    dplyr::group_by(formulation, device_resistance, pressure_drop_clean, particle_size_um) |>
-    dplyr::summarise(
-      q3_percent_mean = mean(q3_percent, na.rm = TRUE),
-      q3_percent_sd   = stats::sd(q3_percent, na.rm = TRUE),
-      .groups = "drop"
-    ) |>
-    dplyr::mutate(q3_percent_sd = ifelse(is.na(q3_percent_sd), 0, q3_percent_sd))
+  for (form in formulations) {
 
-  if (nrow(summary_data) == 0) {
-    stop(
-      "No rows available for plotting after filtering.\n",
-      "Check that data contains module == '", test_module, "'",
-      call. = FALSE
-    )
-  }
+    form_data <- dplyr::filter(data, .data$formulation == form)
 
-  device_levels <- summary_data |>
-    dplyr::distinct(device_resistance) |>
-    dplyr::arrange(device_resistance) |>
-    dplyr::pull(device_resistance)
+    # ---- reference pooled once per formulation ----
+    ref_df <- dplyr::filter(form_data, .data$module == reference_module)
 
-  if (all(c("low", "medium", "high") %in% device_levels)) {
-    device_levels <- c("low", "medium", "high")
-  }
+    if (nrow(ref_df) == 0) {
+      if (isTRUE(verbose)) cat("Skipping ", form, ": no reference rows\n", sep = "")
+      next
+    }
 
-  pressure_levels <- summary_data |>
-    dplyr::distinct(pressure_drop_clean) |>
-    dplyr::mutate(numeric_pressure = as.numeric(stringr::str_extract(pressure_drop_clean, "\\d+"))) |>
-    dplyr::arrange(numeric_pressure) |>
-    dplyr::pull(pressure_drop_clean)
+    ref_summary <- pool_q3_percent(ref_df) |>
+      dplyr::mutate(curve = reference_module)
 
-  summary_data <- summary_data |>
-    dplyr::mutate(
-      device_resistance   = factor(device_resistance, levels = device_levels),
-      pressure_drop_clean = factor(pressure_drop_clean, levels = pressure_levels)
-    )
+    # ---- test conditions present for this formulation ----
+    test_df <- dplyr::filter(form_data, .data$module == test_module)
 
-  device_labels <- stats::setNames(
-    stringr::str_to_title(stringr::str_replace_all(device_levels, "_", " ")),
-    device_levels
-  )
+    if (nrow(test_df) == 0) {
+      if (isTRUE(verbose)) cat("Skipping ", form, ": no test rows\n", sep = "")
+      next
+    }
 
-  pressure_labels <- stats::setNames(
-    stringr::str_replace(pressure_levels, "_", " "),
-    pressure_levels
-  )
+    test_conditions <- test_df |>
+      dplyr::distinct(dplyr::across(dplyr::all_of(condition_cols)))
 
-  n_formulations <- dplyr::n_distinct(summary_data$formulation)
-  n_devices      <- length(device_levels)
-  n_pressures    <- length(pressure_levels)
+    if (nrow(test_conditions) == 0) {
+      if (isTRUE(verbose)) cat("Skipping ", form, ": no test conditions\n", sep = "")
+      next
+    }
 
-  # Auto-size unless user overrides
-  plot_width  <- if (is.null(width))  max(12, 5 + n_pressures * 3) else width
-  plot_height <- if (is.null(height)) max(8,  3 + n_devices   * 2.5) else height
+    # Build pooled test curves for each condition
+    test_summaries <- vector("list", nrow(test_conditions))
 
-  p <- ggplot2::ggplot(
-    summary_data,
-    ggplot2::aes(
-      x = particle_size_um,
-      y = q3_percent_mean,
-      color = formulation,
-      fill  = formulation
-    )
-  ) +
-    ggplot2::geom_ribbon(
+    for (i in seq_len(nrow(test_conditions))) {
+
+      cond <- test_conditions[i, , drop = FALSE]
+      cond_vals <- unlist(cond, use.names = FALSE)
+
+      cond_subset <- test_df
+      for (j in seq_along(condition_cols)) {
+        col <- condition_cols[j]
+        val <- cond[[col]][[1]]
+        cond_subset <- dplyr::filter(cond_subset, .data[[col]] == val)
+      }
+
+      if (nrow(cond_subset) == 0) next
+
+      # label like: "high, 1" (or whatever your values are)
+      cond_label <- paste(cond_vals, collapse = ", ")
+
+      test_summaries[[i]] <- pool_q3_percent(cond_subset) |>
+        dplyr::mutate(curve = cond_label)
+    }
+
+    test_summary_all <- dplyr::bind_rows(test_summaries)
+
+    if (nrow(test_summary_all) == 0) next
+
+    # Combine reference + all test curves
+    plot_data <- dplyr::bind_rows(ref_summary, test_summary_all) |>
+      dplyr::mutate(
+        curve = factor(.data$curve, levels = c(reference_module, sort(unique(test_summary_all$curve))))
+      )
+
+    # Plot: reference as fixed color, tests as a palette
+    p <- ggplot2::ggplot(
+      plot_data,
       ggplot2::aes(
-        ymin = q3_percent_mean - q3_percent_sd,
-        ymax = q3_percent_mean + q3_percent_sd
-      ),
-      alpha = 0.1,
-      color = NA
-    ) +
-    ggplot2::geom_line(linewidth = 1.0) +
-    ggplot2::facet_grid(
-      device_resistance ~ pressure_drop_clean,
-      labeller = ggplot2::labeller(
-        device_resistance   = device_labels,
-        pressure_drop_clean = pressure_labels
+        x = .data$particle_size_um,
+        y = .data$q3_percent_mean,
+        color = .data$curve,
+        fill  = .data$curve
       )
     ) +
-    ggplot2::scale_x_log10(
-      limits = c(0.5, 100),
-      breaks = c(0.5, 1, 2, 5, 10, 20, 50, 100),
-      labels = c("0.5", "1", "2", "5", "10", "20", "50", "100")
-    ) +
-    ggplot2::scale_y_continuous(
-      limits = c(0, 100),
-      breaks = seq(0, 100, 20)
-    ) +
-    ggplot2::scale_color_viridis_d(name = "Formulation", option = "turbo") +
-    ggplot2::scale_fill_viridis_d(guide = "none", option = "turbo") +
-    ggplot2::labs(
-      x = "Particle Size (µm)",
-      y = expression("Cumulative Distribution " * Q[3] * " (%)"),
-      title = sprintf("All %s Distributions by Device Resistance × Pressure Drop", test_module),
-      subtitle = sprintf(
-        "%d formulations across %d conditions (%d×%d grid)",
-        n_formulations, n_devices * n_pressures, n_devices, n_pressures
+      ggplot2::geom_ribbon(
+        ggplot2::aes(
+          ymin = .data$q3_percent_mean - dplyr::coalesce(.data$q3_percent_sd, 0),
+          ymax = .data$q3_percent_mean + dplyr::coalesce(.data$q3_percent_sd, 0)
+        ),
+        alpha = 0.12,
+        color = NA
+      ) +
+      ggplot2::geom_line(linewidth = 1.0) +
+      ggplot2::scale_x_log10(
+        limits = c(0.5, 100),
+        breaks = c(0.5, 1, 2, 5, 10, 20, 50, 100),
+        labels = c("0.5", "1", "2", "5", "10", "20", "50", "100")
+      ) +
+      ggplot2::scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, 20)) +
+      # Manual color control: reference fixed + tests from viridis
+      ggplot2::scale_color_manual(
+        values = c(
+          setNames("#E31A1C", reference_module),
+          setNames(viridis::viridis(length(levels(plot_data$curve)) - 1, option = "turbo"),
+                   setdiff(levels(plot_data$curve), reference_module))
+        ),
+        name = NULL
+      ) +
+      ggplot2::scale_fill_manual(
+        values = c(
+          setNames("#E31A1C", reference_module),
+          setNames(viridis::viridis(length(levels(plot_data$curve)) - 1, option = "turbo"),
+                   setdiff(levels(plot_data$curve), reference_module))
+        ),
+        guide = "none"
+      ) +
+      ggplot2::labs(
+        x = "Particle Size (µm)",
+        y = expression("Cumulative Distribution " * Q[3] * " (%)"),
+        title = paste0(form, ": ", reference_module, " reference vs all ", test_module, " conditions"),
+        subtitle = paste0("Overlay of ", nrow(test_conditions), " test conditions (", paste(condition_cols, collapse = " × "), ")")
+      ) +
+      ggplot2::theme_classic(base_size = 12) +
+      ggplot2::theme(
+        legend.position = "right",
+        legend.text = ggplot2::element_text(size = 9),
+        plot.title = ggplot2::element_text(face = "bold", size = 14)
       )
-    ) +
-    ggplot2::theme_classic(base_size = 12) +
-    ggplot2::theme(
-      panel.grid.major = ggplot2::element_line(color = "grey90", linewidth = 0.3),
-      panel.grid.minor.x = ggplot2::element_line(color = "grey95", linewidth = 0.2),
-      axis.title = ggplot2::element_text(face = "bold"),
-      legend.title = ggplot2::element_text(face = "bold"),
-      legend.position = "right",
-      plot.title = ggplot2::element_text(face = "bold", size = 16),
-      plot.subtitle = ggplot2::element_text(size = 11),
-      strip.background = ggplot2::element_rect(fill = "grey90", color = "black"),
-      strip.text = ggplot2::element_text(face = "bold", size = 10)
-    )
 
-  output_path <- file.path(output_dir, filename)
-  ggplot2::ggsave(output_path, p, width = plot_width, height = plot_height, device = "pdf")
+    out_file <- paste0(as.character(form), "__", filename_suffix)
+    out_path <- file.path(output_dir, out_file)
+    ggplot2::ggsave(out_path, p, width = width, height = height, device = "pdf")
 
-  if (isTRUE(verbose)) {
-    cat(sprintf("✓ Saved: %s (%d×%d grid)\n", output_path, n_devices, n_pressures))
+    if (isTRUE(verbose)) cat("✓ Saved:", out_file, "\n")
   }
 
-  return(p)
+  invisible(TRUE)
 }
 
 # ==============================================================================
@@ -1137,14 +1158,15 @@ generate_all_plots <- function(
   )
   p_individual <- NULL
 
-  if (verbose) cat("Creating INHALER overlay PDF...\n")
-  p_overlay <- plot_all_inhaler_overlay(
+  if (verbose) cat("Creating per-formulation reference + INHALER overlay PDFs...\n")
+  export_formulation_overlay_reference_plus_all_tests(
     data,
+    reference_module = reference_module,
     test_module = test_module,
     output_dir = output_dir,
-    filename = "all_inhaler_overlay.pdf",
     verbose = verbose
   )
+  p_overlay <- NULL
 
   if (verbose) cat("Creating W1 ranking plot...\n")
   p_w1 <- plot_w1_bars(
