@@ -7,8 +7,6 @@
 #   and dispersibility metrics. All CDF-based plots follow the same
 #   replicate-pooling logic used in Wasserstein-1 calculations (script 02).
 #
-#   This script defines visualization functions only and does NOT
-#   auto-execute when sourced.
 #
 # ------------------------------------------------------------------
 # HOW TO USE (MANUAL EXECUTION)
@@ -484,20 +482,23 @@ export_formulation_overlay_reference_plus_all_tests <- function(
 }
 
 # ==============================================================================
-# FUNCTION 3: Plot Wasserstein Distance Bar Chart
+# FUNCTION: Plot Wasserstein Distance Bars (auto-adapts to dataset shape)
 # ==============================================================================
 
 plot_w1_bars <- function(
-    w1_results,
-    metric = "W1_micrometers",
-    sort_by = TRUE,
-    save_plot = FALSE,
-    output_dir = figures_dir,
-    filename = "w1_ranking.pdf",
-    width = NULL,
-    height = NULL,
-    dpi = 300
+  w1_results,
+  metric = "W1_micrometers",
+  sort_by = TRUE,
+  facet_mode = c("auto", "grid", "device", "pressure", "none"),
+  save_plot = FALSE,
+  output_dir = figures_dir,
+  filename = "w1_ranking.pdf",
+  width = NULL,
+  height = NULL,
+  dpi = 300
 ) {
+
+  facet_mode <- match.arg(facet_mode)
 
   metric_labels <- list(
     W1_micrometers = "W₁ Distance (µm)",
@@ -510,6 +511,13 @@ plot_w1_bars <- function(
     stop("metric must be one of: W1_micrometers, W1_normalized, d50_shift_um", call. = FALSE)
   }
 
+  required_cols <- c("formulation", "device_resistance", "pressure_drop", metric)
+  missing_cols <- setdiff(required_cols, names(w1_results))
+  if (length(missing_cols) > 0) {
+    stop("w1_results is missing: ", paste(missing_cols, collapse = ", "), call. = FALSE)
+  }
+
+  # ---- levels + ordering ----
   device_levels <- w1_results |>
     dplyr::distinct(device_resistance) |>
     dplyr::arrange(device_resistance) |>
@@ -525,23 +533,6 @@ plot_w1_bars <- function(
     dplyr::arrange(numeric_pressure) |>
     dplyr::pull(pressure_drop)
 
-  plot_data <- w1_results |>
-    dplyr::mutate(
-      device_resistance = factor(device_resistance, levels = device_levels),
-      pressure_drop     = factor(pressure_drop, levels = pressure_levels)
-    )
-
-  if (isTRUE(sort_by)) {
-    order_levels <- w1_results |>
-      dplyr::group_by(formulation) |>
-      dplyr::summarise(mean_metric = mean(.data[[metric]], na.rm = TRUE), .groups = "drop") |>
-      dplyr::arrange(dplyr::desc(mean_metric)) |>
-      dplyr::pull(formulation)
-
-    plot_data <- plot_data |>
-      dplyr::mutate(formulation = factor(formulation, levels = order_levels))
-  }
-
   device_labels <- stats::setNames(
     stringr::str_to_title(stringr::str_replace_all(device_levels, "_", " ")),
     device_levels
@@ -552,33 +543,72 @@ plot_w1_bars <- function(
     pressure_levels
   )
 
+  plot_data <- w1_results |>
+    dplyr::mutate(
+      device_resistance = factor(device_resistance, levels = device_levels),
+      pressure_drop     = factor(pressure_drop,     levels = pressure_levels),
+      # A human-readable condition key for “single formulation / many conditions” cases
+      condition = paste(as.character(device_resistance), as.character(pressure_drop), sep = ", ")
+    )
+
+  n_formulations <- dplyr::n_distinct(plot_data$formulation)
   n_devices      <- length(device_levels)
   n_pressures    <- length(pressure_levels)
-  n_formulations <- dplyr::n_distinct(plot_data$formulation)
 
-  if (is.null(width)) {
-    width <- max(10, 5 + n_pressures * 2 + n_formulations * 0.5)
-  }
-  if (is.null(height)) {
-    height <- max(8, 3 + n_devices * 2.5)
+  # ---- sorting ----
+  if (isTRUE(sort_by)) {
+    if (n_formulations > 1) {
+      order_levels <- plot_data |>
+        dplyr::group_by(formulation) |>
+        dplyr::summarise(mean_metric = mean(.data[[metric]], na.rm = TRUE), .groups = "drop") |>
+        dplyr::arrange(dplyr::desc(mean_metric)) |>
+        dplyr::pull(formulation)
+
+      plot_data <- plot_data |>
+        dplyr::mutate(formulation = factor(formulation, levels = order_levels))
+    } else {
+      # one formulation -> sort conditions instead
+      order_levels <- plot_data |>
+        dplyr::group_by(condition) |>
+        dplyr::summarise(mean_metric = mean(.data[[metric]], na.rm = TRUE), .groups = "drop") |>
+        dplyr::arrange(dplyr::desc(mean_metric)) |>
+        dplyr::pull(condition)
+
+      plot_data <- plot_data |>
+        dplyr::mutate(condition = factor(condition, levels = order_levels))
+    }
   }
 
-  p <- ggplot2::ggplot(plot_data, ggplot2::aes(x = formulation, y = .data[[metric]])) +
+  # ---- AUTO facet decision ----
+  if (facet_mode == "auto") {
+    facet_mode <- if (n_devices > 1 && n_pressures > 1) {
+      "grid"
+    } else if (n_devices > 1) {
+      "device"
+    } else if (n_pressures > 1) {
+      "pressure"
+    } else {
+      "none"
+    }
+  }
+
+  # ---- choose x-axis based on dataset shape ----
+  x_var <- if (n_formulations > 1) "formulation" else "condition"
+  x_lab <- if (n_formulations > 1) "Formulation" else "Condition (device, pressure)"
+
+  # ---- build plot ----
+  p <- ggplot2::ggplot(
+    plot_data,
+    ggplot2::aes(x = .data[[x_var]], y = .data[[metric]])
+  ) +
     ggplot2::geom_col(fill = "#1F78B4", color = "black", linewidth = 0.3) +
-    ggplot2::facet_grid(
-      device_resistance ~ pressure_drop,
-      labeller = ggplot2::labeller(
-        device_resistance = device_labels,
-        pressure_drop     = pressure_labels
-      )
-    ) +
     ggplot2::labs(
-      x = "Formulation",
+      x = x_lab,
       y = y_label,
-      title = "Dispersibility Ranking by Device Resistance × Pressure Drop",
+      title = "Dispersibility Ranking (W₁)",
       subtitle = sprintf(
-        "Lower W₁ = Better dispersibility (%d×%d conditions)",
-        n_devices, n_pressures
+        "Data shape: %d formulation(s), %d device level(s), %d pressure level(s)",
+        n_formulations, n_devices, n_pressures
       )
     ) +
     ggplot2::theme_classic(base_size = 12) +
@@ -592,244 +622,42 @@ plot_w1_bars <- function(
       strip.text       = ggplot2::element_text(face = "bold", size = 10)
     )
 
+  # ---- facets (optional) ----
+  if (facet_mode == "grid") {
+    p <- p + ggplot2::facet_grid(
+      device_resistance ~ pressure_drop,
+      labeller = ggplot2::labeller(
+        device_resistance = device_labels,
+        pressure_drop     = pressure_labels
+      )
+    )
+  } else if (facet_mode == "device") {
+    p <- p + ggplot2::facet_wrap(
+      ~ device_resistance,
+      nrow = 1,
+      labeller = ggplot2::labeller(device_resistance = device_labels)
+    )
+  } else if (facet_mode == "pressure") {
+    p <- p + ggplot2::facet_wrap(
+      ~ pressure_drop,
+      nrow = 1,
+      labeller = ggplot2::labeller(pressure_drop = pressure_labels)
+    )
+  }
+
+  # ---- sizing defaults ----
+  if (is.null(width)) {
+    width <- if (x_var == "formulation") max(10, 4 + n_formulations * 1.2) else max(10, 4 + dplyr::n_distinct(plot_data$condition) * 0.8)
+  }
+  if (is.null(height)) {
+    height <- if (facet_mode == "grid") max(6, 2 + n_devices * 2.0) else 6
+  }
+
   if (isTRUE(save_plot)) {
     if (!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
     output_path <- file.path(output_dir, filename)
     ggplot2::ggsave(output_path, p, width = width, height = height, dpi = dpi)
-    cat(sprintf("✓ Saved: %s (%d×%d grid)\n", output_path, n_devices, n_pressures))
-  }
-
-  return(p)
-}
-
-
-
-
-# ==============================================================================
-# FUNCTION 6: Plot W1 Bars Faceted by Device Resistance
-# ==============================================================================
-
-plot_w1_by_device <- function(
-    w1_results,
-    metric = "W1_micrometers",
-    output_dir = figures_dir,
-    filename = "W1_by_device.pdf",
-    width = NULL,
-    height = NULL,
-    verbose = TRUE
-) {
-
-  if (!dir.exists(output_dir)) {
-    dir.create(output_dir, recursive = TRUE)
-  }
-
-  metric_labels <- list(
-    W1_micrometers = "W₁ Distance (µm)",
-    W1_normalized  = "W₁/d₅₀ (Normalized)",
-    d50_shift_um   = "d₅₀ Shift (µm)"
-  )
-
-  y_label <- metric_labels[[metric]]
-  if (is.null(y_label)) {
-    stop("metric must be one of: W1_micrometers, W1_normalized, d50_shift_um", call. = FALSE)
-  }
-
-  device_levels <- w1_results |>
-    dplyr::distinct(.data$device_resistance) |>
-    dplyr::arrange(.data$device_resistance) |>
-    dplyr::pull(.data$device_resistance)
-
-  if (all(c("low", "medium", "high") %in% device_levels)) {
-    device_levels <- c("low", "medium", "high")
-  }
-
-  pressure_levels <- w1_results |>
-    dplyr::distinct(.data$pressure_drop) |>
-    dplyr::mutate(
-      numeric_pressure = as.numeric(stringr::str_extract(.data$pressure_drop, "\\d+"))
-    ) |>
-    dplyr::arrange(.data$numeric_pressure) |>
-    dplyr::pull(.data$pressure_drop)
-
-  plot_data <- w1_results |>
-    dplyr::mutate(
-      device_resistance = factor(.data$device_resistance, levels = device_levels),
-      pressure_drop     = factor(.data$pressure_drop,     levels = pressure_levels)
-    )
-
-  device_labels <- setNames(
-    stringr::str_to_title(stringr::str_replace_all(device_levels, "_", " ")),
-    device_levels
-  )
-
-  pressure_labels <- setNames(
-    stringr::str_replace(pressure_levels, "_", " "),
-    pressure_levels
-  )
-
-  n_devices      <- length(device_levels)
-  n_formulations <- dplyr::n_distinct(plot_data$formulation)
-
-  if (is.null(width))  width  <- max(12, 3 * n_devices + n_formulations * 0.3)
-  if (is.null(height)) height <- 6
-
-  p <- ggplot2::ggplot(
-    plot_data,
-    ggplot2::aes(x = .data$formulation, y = .data[[metric]], fill = .data$pressure_drop)
-  ) +
-    ggplot2::geom_col(
-      position = ggplot2::position_dodge(width = 0.9),
-      color = "black",
-      linewidth = 0.3
-    ) +
-    ggplot2::facet_wrap(
-      ~ device_resistance,
-      nrow = 1,
-      labeller = ggplot2::labeller(device_resistance = device_labels)
-    ) +
-    ggplot2::scale_fill_viridis_d(
-      option = "plasma",
-      name = "Device Pressure Drop",
-      breaks = pressure_levels,
-      labels = unname(pressure_labels[pressure_levels])
-    ) +
-    ggplot2::labs(
-      x = "Formulation",
-      y = y_label,
-      title = "Dispersibility by Device Resistance"
-    ) +
-    ggplot2::theme_classic(base_size = 14) +
-    ggplot2::theme(
-      axis.text.x        = ggplot2::element_text(angle = 45, hjust = 1, face = "bold", size = 10),
-      axis.title         = ggplot2::element_text(face = "bold"),
-      panel.grid.major.y = ggplot2::element_line(color = "grey90", linewidth = 0.3),
-      plot.title         = ggplot2::element_text(face = "bold", size = 16),
-      strip.background   = ggplot2::element_rect(fill = "grey90", color = "black"),
-      strip.text         = ggplot2::element_text(face = "bold", size = 12),
-      legend.position    = "bottom",
-      legend.title       = ggplot2::element_text(face = "bold")
-    )
-
-  output_path <- file.path(output_dir, filename)
-  ggplot2::ggsave(output_path, p, width = width, height = height, device = "pdf")
-
-  if (verbose) {
-    cat(sprintf("✓ Saved: %s (%d devices)\n", output_path, n_devices))
-  }
-
-  return(p)
-}
-
-# ==============================================================================
-# FUNCTION 7: Plot W1 Bars Faceted by Pressure Drop
-# ==============================================================================
-
-plot_w1_by_pressure <- function(
-    w1_results,
-    metric = "W1_micrometers",
-    output_dir = figures_dir,
-    filename = "W1_by_pressure.pdf",
-    width = NULL,
-    height = NULL,
-    verbose = TRUE
-) {
-
-  if (!dir.exists(output_dir)) {
-    dir.create(output_dir, recursive = TRUE)
-  }
-
-  metric_labels <- list(
-    W1_micrometers = "W₁ Distance (µm)",
-    W1_normalized  = "W₁/d₅₀ (Normalized)",
-    d50_shift_um   = "d₅₀ Shift (µm)"
-  )
-
-  y_label <- metric_labels[[metric]]
-  if (is.null(y_label)) {
-    stop("metric must be one of: W1_micrometers, W1_normalized, d50_shift_um", call. = FALSE)
-  }
-
-  device_levels <- w1_results |>
-    dplyr::distinct(.data$device_resistance) |>
-    dplyr::arrange(.data$device_resistance) |>
-    dplyr::pull(.data$device_resistance)
-
-  if (all(c("low", "medium", "high") %in% device_levels)) {
-    device_levels <- c("low", "medium", "high")
-  }
-
-  pressure_levels <- w1_results |>
-    dplyr::distinct(.data$pressure_drop) |>
-    dplyr::mutate(
-      numeric_pressure = as.numeric(stringr::str_extract(.data$pressure_drop, "\\d+"))
-    ) |>
-    dplyr::arrange(.data$numeric_pressure) |>
-    dplyr::pull(.data$pressure_drop)
-
-  plot_data <- w1_results |>
-    dplyr::mutate(
-      device_resistance = factor(.data$device_resistance, levels = device_levels),
-      pressure_drop     = factor(.data$pressure_drop,     levels = pressure_levels)
-    )
-
-  device_labels <- setNames(
-    stringr::str_to_title(stringr::str_replace_all(device_levels, "_", " ")),
-    device_levels
-  )
-
-  pressure_labels <- setNames(
-    stringr::str_replace(pressure_levels, "_", " "),
-    pressure_levels
-  )
-
-  n_pressures    <- length(pressure_levels)
-  n_formulations <- dplyr::n_distinct(plot_data$formulation)
-
-  if (is.null(width))  width  <- max(12, 3 * n_pressures + n_formulations * 0.3)
-  if (is.null(height)) height <- 6
-
-  p <- ggplot2::ggplot(
-    plot_data,
-    ggplot2::aes(x = .data$formulation, y = .data[[metric]], fill = .data$device_resistance)
-  ) +
-    ggplot2::geom_col(
-      position = ggplot2::position_dodge(width = 0.9),
-      color = "black",
-      linewidth = 0.3
-    ) +
-    ggplot2::facet_wrap(
-      ~ pressure_drop,
-      nrow = 1,
-      labeller = ggplot2::labeller(pressure_drop = pressure_labels)
-    ) +
-    ggplot2::scale_fill_viridis_d(
-      option = "plasma",
-      name = "Device Resistance",
-      breaks = device_levels,
-      labels = unname(device_labels[device_levels])
-    ) +
-    ggplot2::labs(
-      x = "Formulation",
-      y = y_label,
-      title = "Dispersibility by Pressure Drop"
-    ) +
-    ggplot2::theme_classic(base_size = 14) +
-    ggplot2::theme(
-      axis.text.x        = ggplot2::element_text(angle = 45, hjust = 1, face = "bold", size = 10),
-      axis.title         = ggplot2::element_text(face = "bold"),
-      panel.grid.major.y = ggplot2::element_line(color = "grey90", linewidth = 0.3),
-      plot.title         = ggplot2::element_text(face = "bold", size = 16),
-      strip.background   = ggplot2::element_rect(fill = "grey90", color = "black"),
-      strip.text         = ggplot2::element_text(face = "bold", size = 12),
-      legend.position    = "bottom",
-      legend.title       = ggplot2::element_text(face = "bold")
-    )
-
-  output_path <- file.path(output_dir, filename)
-  ggplot2::ggsave(output_path, p, width = width, height = height, device = "pdf")
-
-  if (verbose) {
-    cat(sprintf("✓ Saved: %s (%d pressures)\n", output_path, n_pressures))
+    cat(sprintf("✓ Saved: %s (facet_mode = %s)\n", output_path, facet_mode))
   }
 
   return(p)
@@ -883,15 +711,14 @@ generate_all_plots <- function(
   p_overlay <- NULL
 
   # ---- W1 ranking figure ----
-  if (verbose) cat("Creating W1 ranking plot...\n")
+ if (verbose) cat("Creating W1 ranking plot...\n")
   p_w1 <- plot_w1_bars(
     w1_results,
     metric = "W1_micrometers",
+    facet_mode = "auto",   # <--- key change
     save_plot = TRUE,
     output_dir = output_dir,
-    filename = "w1_ranking.pdf",
-    width = 10,
-    height = 6
+    filename = "w1_ranking.pdf"
   )
 
   if (verbose) {
