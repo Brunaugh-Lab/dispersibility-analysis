@@ -117,6 +117,12 @@ plot_reference_vs_test <- function(
       curve = dplyr::recode(curve, reference = reference_label, test = test_label)
     )
 
+  # IMPORTANT: names must match the *actual* curve labels after recode()
+  curve_cols <- stats::setNames(
+    unname(color_palette[c("reference", "test")]),
+    c(reference_label, test_label)
+  )
+
   ggplot2::ggplot(
     summary_data,
     ggplot2::aes(
@@ -140,12 +146,8 @@ plot_reference_vs_test <- function(
       breaks = c(0.5, 1, 2, 5, 10, 20, 50, 100)
     ) +
     ggplot2::scale_y_continuous(limits = c(0, 100)) +
-    ggplot2::scale_color_manual(values = c(reference_label = color_palette["reference"],
-                                           test_label      = color_palette["test"]),
-                                name = NULL) +
-    ggplot2::scale_fill_manual(values = c(reference_label = color_palette["reference"],
-                                          test_label      = color_palette["test"]),
-                               guide = "none") +
+    ggplot2::scale_color_manual(values = curve_cols, name = NULL) +
+    ggplot2::scale_fill_manual(values = curve_cols, guide = "none") +
     ggplot2::labs(
       x = "Particle Size (µm)",
       y = expression("Cumulative Distribution " * Q[3] * " (%)")
