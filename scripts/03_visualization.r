@@ -44,7 +44,6 @@
 #   - plot_individual_formulation_pdfs()
 #   - plot_all_inhaler_overlay()
 #   - plot_w1_bars()
-#   - plot_d50_comparison()
 #   - create_publication_panel()
 #
 #   Factor-faceted plots:
@@ -537,81 +536,6 @@ plot_w1_bars <- function(
     output_path <- file.path(output_dir, filename)
     ggplot2::ggsave(output_path, p, width = width, height = height, dpi = dpi)
     cat(sprintf("✓ Saved: %s (%d×%d grid)\n", output_path, n_devices, n_pressures))
-  }
-
-  return(p)
-}
-
-# ==============================================================================
-# FUNCTION 4: Plot d50 Comparison
-# ==============================================================================
-
-plot_d50_comparison <- function(
-    w1_results,
-    sort_by = TRUE,
-    reference_color = "#E31A1C",
-    test_color = "#1F78B4",
-    save_plot = FALSE,
-    output_dir = figures_dir,
-    filename = "d50_comparison.png",
-    width = 10,
-    height = 6,
-    dpi = 300
-) {
-
-  plot_data <- w1_results %>%
-    select(formulation, d50_reference_um, d50_test_um) %>%
-    pivot_longer(
-      cols = c(d50_reference_um, d50_test_um),
-      names_to = "condition",
-      values_to = "d50"
-    ) %>%
-    mutate(
-      condition = recode(condition,
-                        d50_reference_um = "Reference",
-                        d50_test_um = "Test")
-    )
-
-  if (sort_by) {
-    order_levels <- w1_results %>%
-      arrange(d50_shift_um) %>%
-      pull(formulation)
-
-    plot_data <- plot_data %>%
-      mutate(formulation = factor(formulation, levels = order_levels))
-  }
-
-  p <- ggplot(plot_data, aes(x = formulation, y = d50, fill = condition)) +
-    geom_col(position = position_dodge(width = 0.8),
-             color = "black", linewidth = 0.3) +
-    scale_fill_manual(
-      values = c("Reference" = reference_color, "Test" = test_color),
-      name = "Condition"
-    ) +
-    labs(
-      x = "Formulation",
-      y = "Median Diameter d₅₀ (µm)",
-      title = "Median Particle Size Comparison",
-      subtitle = "Reference vs Test Conditions"
-    ) +
-    theme_classic(base_size = 14) +
-    theme(
-      axis.text.x = element_text(angle = 45, hjust = 1, face = "bold"),
-      axis.title = element_text(face = "bold"),
-      panel.grid.major.y = element_line(color = "grey90", linewidth = 0.3),
-      legend.position = "bottom",
-      legend.title = element_text(face = "bold"),
-      plot.title = element_text(face = "bold", size = 16),
-      plot.subtitle = element_text(size = 12)
-    )
-
-  if (save_plot) {
-    if (!dir.exists(output_dir)) {
-      dir.create(output_dir, recursive = TRUE)
-    }
-    output_path <- file.path(output_dir, filename)
-    ggsave(output_path, p, width = width, height = height, dpi = dpi)
-    cat("✓ Saved:", output_path, "\n")
   }
 
   return(p)
