@@ -1089,55 +1089,6 @@ plot_w1_by_pressure <- function(
 }
 
 # ==============================================================================
-# FUNCTION 5: Create Publication Figure Panel
-# ==============================================================================
-create_publication_panel <- function(
-    data,
-    w1_results,
-    layout = "horizontal",
-    reference_module = "RODOS",
-    test_module = "INHALER",
-    save_plot = FALSE,
-    output_dir = figures_dir,
-    filename = "dispersibility_panel.png",
-    width = 16,
-    height = 12,
-    dpi = 300
-) {
-
-  p1 <- plot_cdf_comparison(data, reference_module, test_module, facet_by = TRUE)
-  p2 <- plot_w1_bars(w1_results, metric = "W1_micrometers")
-  p3 <- plot_d50_comparison(w1_results)
-
-  if (layout == "horizontal") {
-    combined <- p1 / (p2 | p3)
-  } else if (layout == "vertical") {
-    combined <- p1 / p2 / p3
-  } else if (layout == "grid") {
-    combined <- (p1 | p2) / p3
-  } else {
-    stop("layout must be 'horizontal', 'vertical', or 'grid'")
-  }
-
-  combined <- combined +
-    plot_annotation(
-      tag_levels = 'A',
-      theme = theme(plot.tag = element_text(face = "bold", size = 16))
-    )
-
-  if (save_plot) {
-    if (!dir.exists(output_dir)) {
-      dir.create(output_dir, recursive = TRUE)
-    }
-    output_path <- file.path(output_dir, filename)
-    ggsave(output_path, combined, width = width, height = height, dpi = dpi)
-    cat("✓ Saved:", output_path, "\n")
-  }
-
-  return(combined)
-}
-
-# ==============================================================================
 # CONVENIENCE FUNCTION: Generate all standard plots
 # ==============================================================================
 generate_all_plots <- function(
