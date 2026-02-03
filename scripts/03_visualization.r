@@ -871,6 +871,7 @@ generate_all_plots <- function(
     if (verbose) cat("Created output directory:", output_dir, "\n")
   }
 
+  # ---- Exporter 1: pairwise PDFs ----
   if (verbose) cat("Creating pairwise reference vs test PDFs...\n")
   export_pairwise_condition_pdfs(
     data,
@@ -881,7 +882,8 @@ generate_all_plots <- function(
   )
   p_individual <- NULL
 
-  if (verbose) cat("Creating per-formulation reference + INHALER overlay PDFs...\n")
+  # ---- Exporter 2: per-formulation overlay ----
+  if (verbose) cat("Creating per-formulation reference + test overlay PDFs...\n")
   export_formulation_overlay_reference_plus_all_tests(
     data,
     reference_module = reference_module,
@@ -891,6 +893,7 @@ generate_all_plots <- function(
   )
   p_overlay <- NULL
 
+  # ---- W1 ranking figure ----
   if (verbose) cat("Creating W1 ranking plot...\n")
   p_w1 <- plot_w1_bars(
     w1_results,
@@ -902,40 +905,6 @@ generate_all_plots <- function(
     height = 6
   )
 
-  if (verbose) cat("Creating CDF plot faceted by device...\n")
-  p_cdf_device <- plot_cdf_by_device(
-    data,
-    reference_module = reference_module,
-    test_module = test_module,
-    output_dir = output_dir,
-    verbose = verbose
-  )
-
-  if (verbose) cat("Creating CDF plot faceted by pressure...\n")
-  p_cdf_pressure <- plot_cdf_by_pressure(
-    data,
-    reference_module = reference_module,
-    test_module = test_module,
-    output_dir = output_dir,
-    verbose = verbose
-  )
-
-  if (verbose) cat("Creating W1 plot faceted by device...\n")
-  p_w1_device <- plot_w1_by_device(
-    w1_results,
-    metric = "W1_micrometers",
-    output_dir = output_dir,
-    verbose = verbose
-  )
-
-  if (verbose) cat("Creating W1 plot faceted by pressure...\n")
-  p_w1_pressure <- plot_w1_by_pressure(
-    w1_results,
-    metric = "W1_micrometers",
-    output_dir = output_dir,
-    verbose = verbose
-  )
-
   if (verbose) {
     cat("------------------------------------------------------------------------\n")
     cat("PLOTS COMPLETE - Figures saved to", output_dir, "\n")
@@ -945,10 +914,6 @@ generate_all_plots <- function(
   return(invisible(list(
     individual = p_individual,
     overlay = p_overlay,
-    w1 = p_w1,
-    cdf_device = p_cdf_device,
-    cdf_pressure = p_cdf_pressure,
-    w1_device = p_w1_device,
-    w1_pressure = p_w1_pressure
+    w1 = p_w1
   )))
 }
