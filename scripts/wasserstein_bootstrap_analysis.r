@@ -29,7 +29,9 @@
 #   4. Estimate sampling distribution parameters (mean, SD, 95% CI)
 #   5. Compare bootstrap variability to between-condition effects
 #
-#
+# NOTE: Supplementary / internal analysis script used during manuscript development.
+# Not part of the public toolkit pipeline. Sourcing this file will auto-run and write outputs.
+
 # ==============================================================================
 library(tidyverse)
 library(broom)
