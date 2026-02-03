@@ -1097,14 +1097,15 @@ generate_all_plots <- function(
     if (verbose) cat("Created output directory:", output_dir, "\n")
   }
 
-  if (verbose) cat("Creating individual formulation comparison PDFs...\n")
-  p_individual <- plot_individual_formulation_pdfs(
+  if (verbose) cat("Creating pairwise reference vs test PDFs...\n")
+  export_pairwise_condition_pdfs(
     data,
     reference_module = reference_module,
     test_module = test_module,
     output_dir = output_dir,
     verbose = verbose
   )
+  p_individual <- NULL
 
   if (verbose) cat("Creating INHALER overlay PDF...\n")
   p_overlay <- plot_all_inhaler_overlay(
