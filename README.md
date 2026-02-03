@@ -12,6 +12,9 @@ This toolkit calculates **dispersibility metrics** for dry powder inhalers by:
 
 **Physical interpretation:** Lower W₁ = better dispersibility (closer to fully dispersed state)
 
+**Note on publication figures:**
+Figures appearing in associated manuscripts were generated using study-specific visualization scripts tailored to the experimental design. The public toolkit provides generalized plotting functions that reproduce the same underlying data processing, replicate pooling, and Wasserstein-1 (W₁) calculations, but may differ in presentation details (e.g., faceting, ordering, or aesthetics).
+
 **Pipeline workflow:**
 - **Script 01** (`01_data_import.R`): Reads raw PAQXOS CSVs → Saves `data/tidy/standardized_data_with_conditions.csv`
   - Auto-detects data header row per file (handles variations in PAQXOS export format)
@@ -613,3 +616,17 @@ The toolkit follows best practices by pooling technical replicates before calcul
 - Runtime scales linearly with number of files
 - Visualization time scales with number of conditions
 - Consider subset analysis for very large datasets (>1000 files)
+
+### Reproducibility and Scope
+
+This repository is intended to provide a transparent, reusable implementation of the dispersibility metric and core analysis workflow. Visualization functions prioritize sensible defaults across diverse experimental designs rather than exact replication of manuscript figures.
+
+## Citation
+
+If you use this toolkit in academic work, please cite:
+
+Brunaugh A. et al. (2025).
+*A distribution-based metric for quantifying dispersibility in dry powder inhalers.*
+Pharmaceutics.
+
+A DOI-linked software archive corresponding to the published version is available via Zenodo.
