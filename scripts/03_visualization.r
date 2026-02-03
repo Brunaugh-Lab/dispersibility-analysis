@@ -206,20 +206,22 @@ export_pairwise_condition_pdfs <- function(
       condition <- test_conditions[i, , drop = FALSE]
       condition_vals <- unlist(condition, use.names = FALSE)
 
-      test_summary <- form_data |>
-        dplyr::filter(.data$module == test_module) |>
-        dplyr::filter(
-          dplyr::if_all(
-            dplyr::all_of(condition_cols),
-            ~ . == condition[[dplyr::cur_column()]]
-          )
-        ) |>
-        dplyr::group_by(.data$particle_size_um) |>
-        dplyr::summarise(
-          q3_percent_mean = mean(.data$q3_percent, na.rm = TRUE),
-          q3_percent_sd   = stats::sd(.data$q3_percent, na.rm = TRUE),
-          .groups = "drop"
-        )
+            test_subset <- form_data |>
+              dplyr::filter(.data$module == test_module)
+
+            for (j in seq_along(condition_cols)) {
+              col <- condition_cols[j]
+              val <- condition[[col]][[1]]
+              test_subset <- dplyr::filter(test_subset, .data[[col]] == val)
+            }
+
+            test_summary <- test_subset |>
+              dplyr::group_by(.data$particle_size_um) |>
+              dplyr::summarise(
+                q3_percent_mean = mean(.data$q3_percent, na.rm = TRUE),
+                q3_percent_sd   = stats::sd(.data$q3_percent, na.rm = TRUE),
+                .groups = "drop"
+              )
 
       if (nrow(test_summary) == 0) next
 
