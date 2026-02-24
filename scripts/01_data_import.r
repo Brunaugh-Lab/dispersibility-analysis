@@ -450,7 +450,7 @@ read_ld_data_from_structure <- function(
         is_rodos ~ "reference",
         TRUE     ~ dplyr::case_when(
           stringr::str_detect(tolower(device), "low")    ~ "low",
-          stringr::str_detect(tolower(device), "medium") ~ "medium",
+          stringr::str_detect(tolower(device), "med") ~ "medium",
           stringr::str_detect(tolower(device), "high")   ~ "high",
           TRUE ~ NA_character_
         )
