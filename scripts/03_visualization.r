@@ -1177,6 +1177,18 @@ generate_all_plots <- function(
     filename = "w1_ranking.pdf"
   )
 
+  # ---- Exporter 3: cross-formulation CSD overlay ----
+  if (verbose) cat("Creating cross-formulation CSD overlay...\n")
+  p_cross <- export_cross_formulation_overlay(
+    data,
+    output_dir               = output_dir,
+    filename                 = "cross_formulation_overlay.pdf",
+    reference_module         = reference_module,
+    test_module              = test_module,
+    strip_formulation_prefix = NULL,
+    verbose                  = verbose
+  )
+
   if (verbose) {
     cat("------------------------------------------------------------------------\n")
     cat("PLOTS COMPLETE - Figures saved to", output_dir, "\n")
