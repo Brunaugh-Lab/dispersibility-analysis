@@ -39,10 +39,12 @@
 #   Plotters (return ggplot objects):
 #     - plot_reference_vs_test()
 #     - plot_w1_bars()
+#     - plot_cross_formulation_overlay()       <- NEW
 #
 #   Exporters (write figures to disk):
 #     - export_pairwise_condition_pdfs()
 #     - export_formulation_overlay_reference_plus_all_tests()
+#     - export_cross_formulation_overlay()     <- NEW
 #
 #   Workflow / orchestration:
 #     - generate_all_plots()
