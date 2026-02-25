@@ -1197,7 +1197,8 @@ generate_all_plots <- function(
 
   return(invisible(list(
     individual = p_individual,
-    overlay = p_overlay,
-    w1 = p_w1
+    overlay    = p_overlay,
+    w1         = p_w1,
+    cross      = p_cross
   )))
 }
