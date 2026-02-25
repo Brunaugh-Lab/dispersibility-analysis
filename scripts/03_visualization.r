@@ -1023,13 +1023,16 @@ plot_cross_formulation_overlay <- function(
       guide  = "none"
     ) +
     ggplot2::scale_linetype_manual(
-      values = c(reference = "dashed", test = "solid"),
-      labels = c(
-        reference = paste0(reference_module, " (reference)"),
-        test      = paste0(test_module, " (test)")
-      ),
-      name = NULL
-    ) +
+    values = c(reference = "dashed", test = "solid"),
+    labels = c(
+      reference = paste0(reference_module, " (reference)"),
+      test      = paste0(test_module, " (test)")
+    ),
+    name  = NULL,
+    guide = ggplot2::guide_legend(
+      keywidth = ggplot2::unit(2, "cm")
+    )
+) +
     ggplot2::labs(
       x = "Particle Size (\u00b5m)",
       y = expression("Cumulative Distribution " * Q[3] * " (%)")
@@ -1037,7 +1040,6 @@ plot_cross_formulation_overlay <- function(
     ggplot2::theme_classic(base_size = 12) +
     ggplot2::theme(
       legend.position    = "right",
-      legend.key.width = ggplot2::unit(2, "cm"),
       legend.text        = ggplot2::element_text(size = 9),
       legend.title       = ggplot2::element_text(face = "bold", size = 10),
       axis.title         = ggplot2::element_text(face = "bold"),
