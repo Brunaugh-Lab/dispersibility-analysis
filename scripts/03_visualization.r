@@ -763,6 +763,363 @@ plot_w1_bars <- function(
 }
 
 # ==============================================================================
+# PLOTTER 3: Cross-formulation CSD overlay — all formulations × all conditions
+#
+#   Returns a single ggplot showing:
+#     - One RODOS reference curve PER FORMULATION (pooled within formulation),
+#       drawn as a dashed line in that formulation's color
+#     - One INHALER curve per formulation × condition, drawn as solid lines
+#   Faceted by device_resistance × pressure_drop when multiple conditions exist;
+#   no faceting when only one condition is present.
+#
+#   Pooling: replicates averaged within (replicate, size) first, then across
+#   replicates — consistent with 02_wasserstein_core.R.
+#
+# @param data            Tidy data frame from 01_data_import.R. RODOS rows must
+#                        carry the correct formulation ID (not "RODOS") so that
+#                        each formulation's reference is matched to its own powder.
+# @param reference_module  Module label for reference disperser. Default: "RODOS"
+# @param test_module       Module label for test disperser. Default: "INHALER"
+# @param condition_cols    Columns defining a test condition.
+#                          Default: c("device_resistance", "pressure_drop_clean")
+# @param formulation_colors  Named character vector of hex colors, one per
+#                          formulation. If NULL, viridis turbo palette is used.
+# @param strip_formulation_prefix  Character string to strip from formulation
+#                          labels for a cleaner legend (e.g. "20260116"). NULL
+#                          to keep full labels.
+# @param facet_ncol        Number of columns when faceting. Default: NULL (auto).
+#
+# @return ggplot object
+# ==============================================================================
+
+plot_cross_formulation_overlay <- function(
+    data,
+    reference_module         = "RODOS",
+    test_module              = "INHALER",
+    condition_cols           = c("device_resistance", "pressure_drop_clean"),
+    formulation_colors       = NULL,
+    strip_formulation_prefix = NULL,
+    facet_ncol               = NULL
+) {
+
+  # ---- input checks ----
+  needed <- c("formulation", "module", "particle_size_um",
+              "q3_percent", "replicate", condition_cols)
+  missing_cols <- setdiff(needed, names(data))
+  if (length(missing_cols) > 0) {
+    stop("plot_cross_formulation_overlay: missing columns: ",
+         paste(missing_cols, collapse = ", "), call. = FALSE)
+  }
+
+  # Warn if any RODOS rows still carry "RODOS" as their formulation —
+  # that means the metadata fix in 01_data_import.R has not been applied.
+  rodos_rows <- dplyr::filter(data, .data$module == reference_module)
+  orphan_rodos <- dplyr::filter(rodos_rows, .data$formulation == reference_module)
+  if (nrow(orphan_rodos) > 0) {
+    warning(
+      nrow(orphan_rodos), " RODOS row(s) have formulation == '", reference_module,
+      "' instead of a real formulation ID. ",
+      "These will be dropped. Check that 01_data_import.R has the formulation_id fix applied.",
+      call. = FALSE
+    )
+  }
+
+  # ---- helper: replicate-first pooling → q3_percent summary ----
+  pool_q3 <- function(df) {
+    df |>
+      dplyr::group_by(.data$particle_size_um, .data$replicate) |>
+      dplyr::summarise(
+        q3_rep = mean(.data$q3_percent, na.rm = TRUE),
+        .groups = "drop"
+      ) |>
+      dplyr::group_by(.data$particle_size_um) |>
+      dplyr::summarise(
+        q3_mean = mean(.data$q3_rep,      na.rm = TRUE),
+        q3_sd   = stats::sd(.data$q3_rep, na.rm = TRUE),
+        n_rep   = dplyr::n(),
+        .groups = "drop"
+      ) |>
+      dplyr::arrange(.data$particle_size_um)
+  }
+
+  # ---- formulations present in test data ----
+  formulations <- data |>
+    dplyr::filter(
+      .data$module      == test_module,
+      .data$formulation != reference_module
+    ) |>
+    dplyr::pull(.data$formulation) |>
+    unique() |>
+    sort()
+
+  if (length(formulations) == 0) {
+    stop("No test data found for module '", test_module, "'.", call. = FALSE)
+  }
+
+  # ---- discover test conditions ----
+  test_conditions <- data |>
+    dplyr::filter(.data$module == test_module) |>
+    dplyr::distinct(dplyr::across(dplyr::all_of(condition_cols)))
+
+  n_conditions <- nrow(test_conditions)
+  if (n_conditions == 0) {
+    stop("No test conditions found.", call. = FALSE)
+  }
+
+  # ---- build per-formulation RODOS reference curves ----
+  ref_curves <- purrr::map_dfr(formulations, function(form) {
+
+    ref_df <- data |>
+      dplyr::filter(
+        .data$module      == reference_module,
+        .data$formulation == form
+      )
+
+    if (nrow(ref_df) == 0) {
+      warning("No RODOS data found for formulation '", form, "'. Skipping.", call. = FALSE)
+      return(dplyr::tibble())
+    }
+
+    pooled <- pool_q3(ref_df) |>
+      dplyr::mutate(
+        curve_type  = "reference",
+        formulation = form
+      )
+
+    # Replicate into every test condition so faceting works correctly —
+    # each facet panel needs its own copy of this formulation's reference.
+    if (n_conditions > 1) {
+      purrr::map_dfr(seq_len(n_conditions), function(ci) {
+        cond <- test_conditions[ci, , drop = FALSE]
+        pooled |>
+          dplyr::mutate(
+            dplyr::across(
+              dplyr::all_of(condition_cols),
+              ~ rep(as.character(cond[[dplyr::cur_column()]][[1]]), dplyr::n())
+            )
+          )
+      })
+    } else {
+      # single condition: attach condition values for consistent column structure
+      cond <- test_conditions[1, , drop = FALSE]
+      pooled |>
+        dplyr::mutate(
+          dplyr::across(
+            dplyr::all_of(condition_cols),
+            ~ rep(as.character(cond[[dplyr::cur_column()]][[1]]), dplyr::n())
+          )
+        )
+    }
+  })
+
+  # ---- build per-formulation × condition INHALER curves ----
+  test_curves <- purrr::map_dfr(seq_len(n_conditions), function(ci) {
+    cond <- test_conditions[ci, , drop = FALSE]
+
+    purrr::map_dfr(formulations, function(form) {
+
+      subset <- data |>
+        dplyr::filter(
+          .data$module      == test_module,
+          .data$formulation == form
+        )
+
+      for (col in condition_cols) {
+        val <- cond[[col]][[1]]
+        if (!is.na(val)) {
+          subset <- dplyr::filter(subset, .data[[col]] == val)
+        }
+      }
+
+      if (nrow(subset) == 0) return(dplyr::tibble())
+
+      pool_q3(subset) |>
+        dplyr::mutate(
+          curve_type  = "test",
+          formulation = form,
+          dplyr::across(
+            dplyr::all_of(condition_cols),
+            ~ rep(as.character(cond[[dplyr::cur_column()]][[1]]), dplyr::n())
+          )
+        )
+    })
+  })
+
+  if (nrow(test_curves) == 0) {
+    stop("No INHALER curves could be built. Check data.", call. = FALSE)
+  }
+
+  # ---- formulation display labels ----
+  form_labels <- stats::setNames(formulations, formulations)
+  if (!is.null(strip_formulation_prefix) && nchar(strip_formulation_prefix) > 0) {
+    form_labels <- stats::setNames(
+      stringr::str_remove(formulations, stringr::fixed(strip_formulation_prefix)),
+      formulations
+    )
+  }
+
+  # ---- colors: one per formulation ----
+  if (is.null(formulation_colors)) {
+    pal <- viridis::viridis(length(formulations), option = "turbo")
+    formulation_colors <- stats::setNames(pal, formulations)
+  } else {
+    missing_forms <- setdiff(formulations, names(formulation_colors))
+    if (length(missing_forms) > 0) {
+      extra <- viridis::viridis(length(missing_forms), option = "turbo")
+      formulation_colors[missing_forms] <- extra
+    }
+  }
+
+  # ---- combine ----
+  plot_data <- dplyr::bind_rows(ref_curves, test_curves) |>
+    dplyr::mutate(
+      formulation = factor(.data$formulation, levels = formulations),
+      q3_sd       = dplyr::coalesce(.data$q3_sd, 0)
+    )
+
+  # ---- facet logic ----
+  device_varies   <- dplyr::n_distinct(test_conditions[[condition_cols[1]]]) > 1
+  pressure_varies <- dplyr::n_distinct(test_conditions[[condition_cols[2]]]) > 1
+
+  # ---- build plot ----
+  # Reference = dashed, INHALER = solid; same color per formulation for both,
+  # so the dashed/solid pair is visually linked without needing a separate color.
+  p <- ggplot2::ggplot(
+    plot_data,
+    ggplot2::aes(
+      x        = .data$particle_size_um,
+      y        = .data$q3_mean,
+      color    = .data$formulation,
+      fill     = .data$formulation,
+      linetype = .data$curve_type
+    )
+  ) +
+    ggplot2::geom_ribbon(
+      ggplot2::aes(
+        ymin = .data$q3_mean - .data$q3_sd,
+        ymax = .data$q3_mean + .data$q3_sd
+      ),
+      alpha = 0.12,
+      color = NA
+    ) +
+    ggplot2::geom_line(linewidth = 1.0) +
+    ggplot2::scale_x_log10(
+      limits = c(0.5, 100),
+      breaks = c(0.5, 1, 2, 5, 10, 20, 50, 100),
+      labels = c("0.5", "1", "2", "5", "10", "20", "50", "100")
+    ) +
+    ggplot2::scale_y_continuous(
+      limits = c(0, 100),
+      breaks = seq(0, 100, 20)
+    ) +
+    ggplot2::scale_color_manual(
+      values = formulation_colors,
+      labels = form_labels,
+      name   = "Formulation"
+    ) +
+    ggplot2::scale_fill_manual(
+      values = formulation_colors,
+      labels = form_labels,
+      guide  = "none"
+    ) +
+    ggplot2::scale_linetype_manual(
+      values = c(reference = "dashed", test = "solid"),
+      labels = c(
+        reference = paste0(reference_module, " (reference)"),
+        test      = paste0(test_module, " (test)")
+      ),
+      name = NULL
+    ) +
+    ggplot2::labs(
+      x = "Particle Size (\u00b5m)",
+      y = expression("Cumulative Distribution " * Q[3] * " (%)")
+    ) +
+    ggplot2::theme_classic(base_size = 12) +
+    ggplot2::theme(
+      legend.position    = "right",
+      legend.text        = ggplot2::element_text(size = 9),
+      legend.title       = ggplot2::element_text(face = "bold", size = 10),
+      axis.title         = ggplot2::element_text(face = "bold"),
+      panel.grid.major.y = ggplot2::element_line(color = "grey90", linewidth = 0.3),
+      strip.background   = ggplot2::element_rect(fill = "grey92", color = "black"),
+      strip.text         = ggplot2::element_text(face = "bold", size = 10)
+    )
+
+  # ---- add facets only when multiple conditions ----
+  if (n_conditions > 1) {
+    if (device_varies && pressure_varies) {
+      p <- p + ggplot2::facet_grid(
+        rows = ggplot2::vars(.data[[condition_cols[1]]]),
+        cols = ggplot2::vars(.data[[condition_cols[2]]])
+      )
+    } else if (device_varies) {
+      p <- p + ggplot2::facet_wrap(
+        ggplot2::vars(.data[[condition_cols[1]]]),
+        ncol = facet_ncol
+      )
+    } else {
+      p <- p + ggplot2::facet_wrap(
+        ggplot2::vars(.data[[condition_cols[2]]]),
+        ncol = facet_ncol
+      )
+    }
+  }
+
+  p
+}
+
+
+# ==============================================================================
+# EXPORTER 3: Save cross-formulation overlay to PDF
+#
+# @param data       Tidy data frame from 01_data_import.R
+# @param output_dir Directory to write PDF. Default: figures_dir
+# @param filename   Output filename. Default: "cross_formulation_overlay.pdf"
+# @param width      PDF width in inches. NULL = auto
+# @param height     PDF height in inches. NULL = auto
+# @param verbose    Print save message. Default: TRUE
+# @param ...        All other arguments forwarded to plot_cross_formulation_overlay()
+#
+# @return Invisibly returns the ggplot object
+# ==============================================================================
+
+export_cross_formulation_overlay <- function(
+    data,
+    output_dir = figures_dir,
+    filename   = "cross_formulation_overlay.pdf",
+    width      = NULL,
+    height     = NULL,
+    verbose    = TRUE,
+    ...
+) {
+
+  if (!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
+
+  dots <- list(...)
+
+  p <- plot_cross_formulation_overlay(data, ...)
+
+  # auto-size based on number of conditions
+  condition_cols <- dots[["condition_cols"]] %||% c("device_resistance", "pressure_drop_clean")
+  test_module    <- dots[["test_module"]]    %||% "INHALER"
+
+  n_conditions <- data |>
+    dplyr::filter(.data$module == test_module) |>
+    dplyr::distinct(dplyr::across(dplyr::all_of(condition_cols))) |>
+    nrow()
+
+  if (is.null(width))  width  <- max(9,  5 + n_conditions * 2.5)
+  if (is.null(height)) height <- max(6,  4 + ceiling(n_conditions / 3) * 1.5)
+
+  out_path <- file.path(output_dir, filename)
+  ggplot2::ggsave(out_path, p, width = width, height = height, device = "pdf")
+
+  if (isTRUE(verbose)) cat("\u2713 Saved:", out_path, "\n")
+
+  invisible(p)
+}
+
+# ==============================================================================
 # ORCHESTRATOR: Generate Standard Dispersibility Figures
 # ==============================================================================
 generate_all_plots <- function(
