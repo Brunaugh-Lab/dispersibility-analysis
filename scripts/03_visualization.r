@@ -1037,6 +1037,7 @@ plot_cross_formulation_overlay <- function(
     ggplot2::theme_classic(base_size = 12) +
     ggplot2::theme(
       legend.position    = "right",
+      legend.key.width = ggplot2::unit(2, "cm"),
       legend.text        = ggplot2::element_text(size = 9),
       legend.title       = ggplot2::element_text(face = "bold", size = 10),
       axis.title         = ggplot2::element_text(face = "bold"),
